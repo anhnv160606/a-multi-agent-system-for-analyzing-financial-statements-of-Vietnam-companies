@@ -12,7 +12,7 @@
 |---|------|----------|-------|--------|
 | 0.1 | Khởi tạo project structure | Tạo folder structure chuẩn (src, tests, configs, prompts, data, ...) | A | `[X]` |
 | 0.2 | Setup Python environment | pyproject.toml / requirements.txt, Python 3.11+ | A | `[X]` |
-| 0.3 | Cài đặt LangGraph + dependencies | langchain, langgraph, chromadb, pdfplumber, ... | A | `[ ]` |
+| 0.3 | Cài đặt LangGraph + dependencies | langchain, langgraph, chromadb, pdfplumber, ... | A | `[ X]` |
 | 0.4 | Setup Docker Compose | MySQL, ChromaDB/Qdrant, app containers | B | `[x]` |
 | 0.5 | Config management | File YAML config cho tất cả tham số (model, temperature, chunk_size, ...) | A | `[ ]` |
 | 0.6 | Setup logging framework | Structured logging (JSON), file + console output | B | `[x]` |
