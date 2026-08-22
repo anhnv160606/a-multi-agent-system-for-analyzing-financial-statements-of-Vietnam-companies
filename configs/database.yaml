@@ -1,0 +1,66 @@
+# ==============================================================================
+# DATABASE CONFIGURATIONS (MySQL & Vector Database)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Relational Database: MySQL Configuration
+# ------------------------------------------------------------------------------
+mysql:
+  host_env: "MYSQL_HOST"
+  default_host: "localhost"
+  port_env: "MYSQL_PORT"
+  default_port: 3306
+  database_env: "MYSQL_DATABASE"
+  
+  # Authentication (Đọc bắt buộc từ .env)
+  user_env: "MYSQL_USER"
+  password_env: "MYSQL_PASSWORD"
+  
+  # Connection Settings & Optimization
+  charset: "utf8mb4"
+  collation: "utf8mb4_unicode_ci"
+  use_ssl: false
+  time_zone: "+07:00"
+  
+  # Connection Pool (Dành cho SQLAlchemy / MySQL Connector)
+  pool:
+    pool_name: "mysql_app_pool"
+    pool_size: 5
+    max_overflow: 10
+    pool_timeout: 30 # seconds
+    pool_recycle: 3600 # Tự làm mới connection sau 1h tránh timeout
+
+# ------------------------------------------------------------------------------
+# 2. Vector Database: ChromaDB Configuration
+# ------------------------------------------------------------------------------
+vector_db:
+  provider: "chroma" # Tùy chọn: "chroma", "qdrant", "milvus"
+  
+  # Chế độ triển khai: "persistent" (local disk) hoặc "http" (client/server)
+  mode: "persistent"
+  
+  # Cấu hình Local Persistent Mode
+  persist_directory: "./data/chroma_db"
+  
+  # Cấu hình Client/Server HTTP Mode (Nếu chạy Docker/Server riêng)
+  http_client:
+    host_env: "CHROMA_HOST"
+    default_host: "localhost"
+    port_env: "CHROMA_PORT"
+    default_port: 8000
+    ssl: false
+    # Authentication Token / API Key (nếu có bật auth trên server Chroma)
+    auth_token_env: "CHROMA_AUTH_TOKEN"
+    headers: {}
+
+  # Collections & Khoảng cách Vector (Distance Metric)
+  collection:
+    name_env: "VECTOR_COLLECTION_NAME"
+    default_name: "document_knowledge_base"
+    # Các độ đo: "cosine", "l2" (Euclidean), hoặc "ip" (Inner Product)
+    distance_metric: "cosine"
+    
+  # Cấu hình Batching khi nạp tài liệu
+  indexing:
+    batch_size: 64
+    max_batch_size: 500
