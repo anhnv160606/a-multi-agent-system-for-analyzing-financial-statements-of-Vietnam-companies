@@ -1,0 +1,92 @@
+services:
+  # MySQL Database for structured financial tables and company metadata
+  mysql:
+    image: mysql:8.0
+    container_name: finagent_mysql
+    restart: unless-stopped
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-financial_db}
+      MYSQL_USER: ${MYSQL_USER:-finagent_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-finagent_pass}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - finagent_network
+
+  # ChromaDB Vector Store for semantic text/table chunks
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: finagent_chromadb
+    restart: unless-stopped
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    ports:
+      - "${CHROMA_PORT:-8000}:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - finagent_network
+
+  # Python Sandbox for safe Calculator Agent code execution (Program of Thought)
+  sandbox:
+    image: python:3.11-slim
+    container_name: finagent_sandbox
+    restart: unless-stopped
+    working_dir: /sandbox
+    command: tail -f /dev/null
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    networks:
+      - finagent_network
+
+  # Main Multi-Agent Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: finagent_app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - MYSQL_HOST=mysql
+      - CHROMA_HOST=chromadb
+    volumes:
+      - .:/app
+    ports:
+      - "8501:8501" # Streamlit UI
+    depends_on:
+      mysql:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    networks:
+      - finagent_network
+
+volumes:
+  mysql_data:
+    driver: local
+  chroma_data:
+    driver: local
+
+networks:
+  finagent_network:
+    driver: bridge
