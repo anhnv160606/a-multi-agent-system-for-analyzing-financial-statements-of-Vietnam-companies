@@ -29,18 +29,18 @@
 | 1.1 | PDF Classifier | Tự động phân loại PDF scan vs PDF native (heuristic: thử extract text, nếu rỗng → scan) | A | `[ ]` |
 | 1.2 | OCR Pipeline (PDF scan) | Tích hợp Tesseract/PaddleOCR cho PDF scan. Test trên BCTC thật | A | `[ ]` |
 | 1.3 | Text Extraction (PDF native) | Dùng pdfplumber / LlamaParse cho PDF có text layer | A | `[ ]` |
-| 1.4 | Table Extraction | Dùng Docling / pdfplumber / Camelot. Xuất dạng Markdown/CSV | B | `[ ]` |
-| 1.5 | Image Extraction | Trích xuất hình ảnh từ PDF (biểu đồ, sơ đồ) | B | `[ ]` |
-| 1.6 | Image Processing | Chart-to-data extraction (DePlot) hoặc VLM captioning cho biểu đồ | B | `[ ]` |
+| 1.4 | Table Extraction | Dùng Docling / pdfplumber / Camelot. Xuất dạng Markdown/CSV | B | `[x]` |
+| 1.5 | Image Extraction | Trích xuất hình ảnh từ PDF (biểu đồ, sơ đồ) | B | `[x]` |
+| 1.6 | Image Processing | Chart-to-data extraction (DePlot) hoặc VLM captioning cho biểu đồ | B | `[x]` |
 | 1.7 | Document Splitter | Tách PDF thành 3 luồng: Text, Table, Images | A | `[ ]` |
 
 ### 1B. API Data
 
 | # | Task | Chi tiết | Người | Status |
 |---|------|----------|-------|--------|
-| 1.8 | VNStock API Integration | Kết nối VNStock, lấy: giá lịch sử, thông tin DN, tin tức | B | `[ ]` |
-| 1.9 | API Data Caching | Cache kết quả API để tránh gọi lại + fallback khi API down | B | `[ ]` |
-| 1.10 | Cross-validation module | Đối chiếu số liệu extract từ PDF với dữ liệu API | A+B | `[ ]` |
+| 1.8 | VNStock API Integration | Kết nối VNStock, lấy: giá lịch sử, thông tin DN, tin tức | B | `[x]` |
+| 1.9 | API Data Caching | Cache kết quả API để tránh gọi lại + fallback khi API down | B | `[x]` |
+| 1.10 | Cross-validation module | Đối chiếu số liệu extract từ PDF với dữ liệu API | A+B | `[/]` |
 
 ---
 
