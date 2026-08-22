@@ -1,0 +1,73 @@
+[build-system]
+# Khai báo hệ thống build sử dụng setuptools
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "FinAgent"
+version = "0.1.0"
+description = "a multi-agent system for analyzing financial statements of Vietnam companies"
+readme = "README.md"
+requires-python = ">=3.11"
+
+# Khai báo tất cả dependencies ở đây
+dependencies = [
+    "langchain",
+    "langgraph",
+    "chromadb",
+    "pdfplumber",
+    "docling",
+    "pytesseract", # Wrapper Python cho Tesseract OCR
+    "vnstock",
+    "mysql-connector-python",
+    "streamlit",
+]
+
+# (Tùy chọn) Nhóm các thư viện chỉ dùng trong lúc phát triển (dev)
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+# ==========================================
+# CẤU HÌNH CÔNG CỤ (TOOLS)
+# ==========================================
+
+# Cấu hình cho Pytest
+[tool.pytest.ini_options]
+minversion = "7.0"
+# Các flags mặc định: hiển thị báo cáo rút gọn (-ra), chạy im lặng (-q)
+addopts = "-ra -q"
+# Thư mục mặc định chứa code test
+testpaths = [
+    "tests",
+]
+python_files = "test_*.py"
+
+# Cấu hình cho Ruff (Linter & Formatter)
+[tool.ruff]
+# Giới hạn độ dài dòng code (88 là chuẩn chung của thư viện Black)
+line-length = 88
+# Target Python version để Ruff tối ưu rules
+target-version = "py311"
+# Bỏ qua các file hoặc thư mục không cần lint
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# Các bộ rules cần bật: 
+# E (Pycodestyle Error), F (Pyflakes), I (Isort - tự động sắp xếp thư viện)
+select = ["E", "F", "I"]
+
+[tool.ruff.format]
+# Dùng ngoặc kép cho chuỗi string (giống chuẩn của Black)
+quote-style = "double"
+# Thụt lề bằng space thay vì tab
+indent-style = "space"
