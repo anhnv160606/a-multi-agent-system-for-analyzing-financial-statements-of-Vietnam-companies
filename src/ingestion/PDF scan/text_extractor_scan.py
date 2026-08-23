@@ -49,6 +49,25 @@ class TextExtractorScan:
  
         return deskewed
 
+    def extract_page(self, image: Image.Image, page_num: int, pdf_path: str=" ") -> PageContent:
+        """Trích text thuần từ 1 trang PDF scan (không có bảng)."""
+        preprocessed_image = self._preprocess_image(image)
+        if self.use_paddle and self._paddle_ocr is not None:
+            result = self._paddle_ocr.ocr(preprocessed_image, cls=True)
+            text = "\n".join([line[1][0] for line in result[0]]) if result and result[0] else ""
+            extraction_engine = "paddleocr"
+        else:
+            text = pytesseract.image_to_string(preprocessed_image, lang=self.lang)
+            extraction_engine = "tesseract"
+
+        return PageContent(
+            page_num=page_num,
+            text=text.strip(),
+            extraction_engine=extraction_engine,
+            layout_info={"source": pdf_path},
+        ) 
+    
+
 
     
 
