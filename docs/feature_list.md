@@ -14,7 +14,7 @@
 | 0.2 | Setup Python environment | pyproject.toml / requirements.txt, Python 3.11+ | A | `[X]` |
 | 0.3 | Cài đặt LangGraph + dependencies | langchain, langgraph, chromadb, pdfplumber, ... | A | `[ X]` |
 | 0.4 | Setup Docker Compose | MySQL, ChromaDB/Qdrant, app containers | B | `[x]` |
-| 0.5 | Config management | File YAML config cho tất cả tham số (model, temperature, chunk_size, ...) | A | `[ ]` |
+| 0.5 | Config management | File YAML config cho tất cả tham số (model, temperature, chunk_size, ...) | A | `[X]` |
 | 0.6 | Setup logging framework | Structured logging (JSON), file + console output | B | `[x]` |
 | 0.7 | Setup Git workflow | Branch strategy, PR template, .gitignore | A+B | `[/]` |
 
@@ -26,7 +26,7 @@
 
 | # | Task | Chi tiết | Người | Status |
 |---|------|----------|-------|--------|
-| 1.1 | PDF Classifier | Tự động phân loại PDF scan vs PDF native (heuristic: thử extract text, nếu rỗng → scan) | A | `[ ]` |
+| 1.1 | PDF Classifier | Tự động phân loại PDF scan vs PDF native (heuristic: thử extract text, nếu rỗng → scan) | A | `[X]` |
 | 1.2 | OCR Pipeline (PDF scan) | Tích hợp Tesseract/PaddleOCR cho PDF scan. Test trên BCTC thật | A | `[ ]` |
 | 1.3 | Text Extraction (PDF native) | Dùng pdfplumber / LlamaParse cho PDF có text layer | A | `[ ]` |
 | 1.4 | Table Extraction | Dùng Docling / pdfplumber / Camelot. Xuất dạng Markdown/CSV | B | `[x]` |
