@@ -27,8 +27,8 @@
 | # | Task | Chi tiết | Người | Status |
 |---|------|----------|-------|--------|
 | 1.1 | PDF Classifier | Tự động phân loại PDF scan vs PDF native (heuristic: thử extract text, nếu rỗng → scan) | A | `[X]` |
-| 1.2 | OCR Pipeline (PDF scan) | Tích hợp Tesseract/PaddleOCR cho PDF scan. Test trên BCTC thật | A | `[ ]` |
-| 1.3 | Text Extraction (PDF native) | Dùng pdfplumber / LlamaParse cho PDF có text layer | A | `[ ]` |
+| 1.2 | OCR Pipeline (PDF scan) | Tích hợp Tesseract/PaddleOCR cho PDF scan. Test trên BCTC thật | A | `[X]` |
+| 1.3 | Text Extraction (PDF native) | Dùng pdfplumber / LlamaParse cho PDF có text layer | A | `[X]` |
 | 1.4 | Table Extraction | Dùng Docling / pdfplumber / Camelot. Xuất dạng Markdown/CSV | B | `[x]` |
 | 1.5 | Image Extraction | Trích xuất hình ảnh từ PDF (biểu đồ, sơ đồ) | B | `[x]` |
 | 1.6 | Image Processing | Chart-to-data extraction (DePlot) hoặc VLM captioning cho biểu đồ | B | `[x]` |
