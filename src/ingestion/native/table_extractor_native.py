@@ -15,12 +15,12 @@ import pandas as pd
 try:
     from src.ingestion.models import ExtractedTable
 except ImportError:
-    from src.ingestion.common.models import ExtractedTable
+    from src.ingestion.models import ExtractedTable
 
 try:
     from src.ingestion.number_utils import normalize_vn_number
 except ImportError:
-    from src.ingestion.common.number_utils import normalize_vn_number
+    from src.ingestion.number_utils import normalize_vn_number
 
 from src.utils.logger import get_logger
 

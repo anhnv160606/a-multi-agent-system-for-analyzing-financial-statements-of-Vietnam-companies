@@ -11,7 +11,7 @@ import fitz
 try:
     from src.ingestion.models import PageContent
 except ImportError:
-    from src.ingestion.common.models import PageContent
+    from src.ingestion.models import PageContent
 
 from src.ingestion.native.pdf_layout import PDFLayoutDetector
 from src.utils.logger import get_logger
