@@ -78,8 +78,7 @@ class TextExtractorScan:
                 continue
             results.append(self.extract_page(images[idx], page_num, pdf_path))
         return results
-
-    
+        
     
 
 
