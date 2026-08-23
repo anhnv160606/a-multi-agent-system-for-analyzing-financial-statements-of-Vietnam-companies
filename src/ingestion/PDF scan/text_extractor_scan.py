@@ -66,6 +66,20 @@ class TextExtractorScan:
             extraction_engine=extraction_engine,
             layout_info={"source": pdf_path},
         ) 
+
+    def extract_text_from_pages( self, pdf_path: str, page_numbers: List[int], dpi: int = 300
+) -> List[PageContent]:
+        images = convert_from_path(pdf_path, dpi=dpi)
+        results = []
+        for page_num in page_numbers:
+            idx = page_num - 1
+            if idx < 0 or idx >= len(images):
+                logger.warning(f"Trang {page_num} vượt phạm vi file.")
+                continue
+            results.append(self.extract_page(images[idx], page_num, pdf_path))
+        return results
+
+    
     
 
 
