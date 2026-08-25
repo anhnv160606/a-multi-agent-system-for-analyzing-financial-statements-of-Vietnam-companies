@@ -128,6 +128,7 @@ class SplitDocument(BaseModel):
     doc_type: str  # "native" | "scan"
     report_category: Optional[str] = None  # "bctc" | "bao_cao_thuong_nien" | "bien_ban_dhcd"
     ticker: Optional[str] = None
+    company_name: Optional[str] = None
     fiscal_year: Optional[int] = None
     texts: List[PageContent] = Field(default_factory=list)
     tables: List[ExtractedTable] = Field(default_factory=list)

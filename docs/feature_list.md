@@ -32,7 +32,7 @@
 | 1.4 | Table Extraction | Dùng Docling / pdfplumber / Camelot. Xuất dạng Markdown/CSV | B | `[x]` |
 | 1.5 | Image Extraction | Trích xuất hình ảnh từ PDF (biểu đồ, sơ đồ) | B | `[x]` |
 | 1.6 | Image Processing | Chart-to-data extraction (DePlot) hoặc VLM captioning cho biểu đồ | B | `[x]` |
-| 1.7 | Document Splitter | Tách PDF thành 3 luồng: Text, Table, Images | A | `[ ]` |
+| 1.7 | Document Splitter | Tách PDF thành 3 luồng: Text, Table, Images | A | `[]` |
 
 ### 1B. API Data
 
