@@ -32,7 +32,7 @@
 | 1.4 | Table Extraction | Dùng Docling / pdfplumber / Camelot. Xuất dạng Markdown/CSV | B | `[x]` |
 | 1.5 | Image Extraction | Trích xuất hình ảnh từ PDF (biểu đồ, sơ đồ) | B | `[x]` |
 | 1.6 | Image Processing | Chart-to-data extraction (DePlot) hoặc VLM captioning cho biểu đồ | B | `[x]` |
-| 1.7 | Document Splitter | Tách PDF thành 3 luồng: Text, Table, Images | A | `[]` |
+| 1.7 | Document Splitter | Tách PDF thành 3 luồng: Text, Table, Images | A | `[X]` |
 
 ### 1B. API Data
 
@@ -50,11 +50,10 @@
 
 | # | Task | Chi tiết | Người | Status |
 |---|------|----------|-------|--------|
-| 2.1 | Text Chunking | Semantic paragraph chunking (RecursiveCharacterTextSplitter hoặc custom) | A | `[ ]` |
-| 2.2 | Table-aware Chunking | Bảng nhỏ → giữ nguyên. Bảng lớn → LLM tạo summary, lưu bảng gốc riêng | A | `[ ]` |
-| 2.3 | Hierarchical Chunking | Parent-child chunking cho văn bản (Section → Paragraph → Sentence) | A | `[ ]` |
-| 2.4 | Metadata Enrichment | Gắn metadata mỗi chunk: `{ticker, year, report_type, section, page, source_file}` | A | `[ ]` |
-| 2.5 | Cross-reference Linking | Liên kết text chunk ↔ table chunk khi có tham chiếu chéo | A | `[ ]` |
+| 2.1 | Text Chunking | Semantic paragraph chunking (RecursiveCharacterTextSplitter hoặc custom) | A | `[X]` |
+| 2.2 | Table-aware Chunking | Bảng nhỏ → giữ nguyên. Bảng lớn → LLM tạo summary, lưu bảng gốc riêng | A | `[X]` |
+| 2.3 | Hierarchical Chunking | Parent-child chunking cho văn bản (Section → Paragraph → Sentence) | A | `[X]` |
+| 2.4 | Metadata Enrichment | Gắn metadata mỗi chunk: `{ticker, year, report_type, section, page, source_file}` | A | `[X]` |
 
 ### 2B. Database Setup
 
