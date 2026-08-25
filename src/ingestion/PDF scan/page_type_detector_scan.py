@@ -70,7 +70,7 @@ if __name__ == "__main__":
     from pdf2image import convert_from_path
 
     if len(sys.argv) > 1:
-        images = convert_from_path(sys.argv[1], dpi=300)
+        images = convert_from_path(sys.argv[1], dpi=200)
         detector = PageTypeDetectorScan()
         for i, img in enumerate(images, start=1):
             has_table = detector.page_has_table(img)
