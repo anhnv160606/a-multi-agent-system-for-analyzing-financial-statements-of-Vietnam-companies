@@ -45,13 +45,21 @@ data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+data/chroma_db/*
+!data/chroma_db/.gitkeep
 data/embeddings_cache/*
 !data/embeddings_cache/.gitkeep
 data/training/*
 !data/training/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
 *.pdf
 *.xlsx
 *.xls
+
 
 # Logs and application run data
 logs/*
