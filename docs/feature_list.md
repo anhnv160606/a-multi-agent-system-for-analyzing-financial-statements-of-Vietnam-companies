@@ -62,7 +62,7 @@
 | 2.6 | MySQL Schema Design | Thiết kế bảng: companies, financial_data, source_documents | B | `[x]` |
 | 2.7 | MySQL Data Loader | Script load bảng số liệu đã extract vào MySQL | B | `[x]` |
 | 2.8 | Vector DB Setup | Cài đặt ChromaDB (dev) / Qdrant (prod), tạo collection | B | `[x]` |
-| 2.9 | Embedding Pipeline | Chọn embedding model (bge-m3 / multilingual-e5), pipeline embed + upsert | A | `[ ]` |
+| 2.9 | Embedding Pipeline | Chọn embedding model (bge-m3 / multilingual-e5), pipeline embed + upsert | A | `[X]` |
 | 2.10 | Embedding Cache | Tránh re-embed cùng một document | B | `[x]` |
 
 
