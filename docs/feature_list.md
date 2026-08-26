@@ -74,10 +74,10 @@
 
 | # | Task | Chi tiết | Người | Status |
 |---|------|----------|-------|--------|
-| 3.1 | Basic RAG Retriever | Vector similarity search cơ bản, trả về top-k chunks | A | `[ ]` |
-| 3.2 | Hybrid Search | Kết hợp embedding search + BM25 keyword search | A | `[ ]` |
-| 3.3 | Metadata Filtering | Filter theo ticker, year, report_type khi retrieve | A | `[ ]` |
-| 3.4 | Table Retrieval | Khi retrieve được table summary → tự động fetch bảng gốc | A | `[ ]` |
+| 3.1 | Basic RAG Retriever | Vector similarity search cơ bản, trả về top-k chunks | A | `[X]` |
+| 3.2 | Hybrid Search | Kết hợp embedding search + BM25 keyword search | A | `[X]` |
+| 3.3 | Metadata Filtering | Filter theo ticker, year, report_type khi retrieve | A | `[X]` |
+| 3.4 | Table Retrieval | Khi retrieve được table summary → tự động fetch bảng gốc | A | `[X]` |
 | 3.5 | Contrastive Financial Retriever | Fine-tune embedding model với triplets tài chính VN (giai đoạn sau) | A | `[ ]` |
 | 3.6 | Training Data Generation | Tạo bộ (anchor, positive, hard_negative) từ BCTC thật | A | `[ ]` |
 
