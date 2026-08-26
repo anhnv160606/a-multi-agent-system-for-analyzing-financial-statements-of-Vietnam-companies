@@ -1,18 +1,12 @@
-"""Embedding Pipeline — embed chunks thành vectors và lưu vào Vector DB.
-
-Luồng:
-    1. Nhận List[Chunk] (đã enrich metadata).
-    2. Lọc chunks embeddable=True.
-    3. Kiểm tra EmbeddingCache → skip chunks đã embed.
-    4. Batch embedding bằng sentence-transformers (model từ settings.yaml).
-    5. Cập nhật cache.
-    6. Upsert vào ChromaDB qua VectorStore kèm metadata.
-"""
+"""Embedding Pipeline — embed chunks thành vectors và lưu vào Vector DB (Sử dụng Hugging Face API)."""
 
 import hashlib
+import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import requests
 import yaml
 
 from src.chunking.models import Chunk, EmbeddingRecord
@@ -41,7 +35,7 @@ def _content_hash(text: str) -> str:
 
 
 class EmbeddingPipeline:
-    """Embed chunks và lưu vào Vector DB với cache layer."""
+    """Embed chunks qua Hugging Face API và lưu vào Vector DB với cache layer."""
 
     def __init__(
         self,
@@ -52,34 +46,68 @@ class EmbeddingPipeline:
     ):
         cfg = _load_embedding_config()
         self.model_name = model_name or cfg.get("model_name", "BAAI/bge-m3")
-        self.batch_size = batch_size or cfg.get("batch_size", 32)
+        # Gọi API nên hạ batch_size xuống (khoảng 16 hoặc 32) để tránh timeout/payload too large
+        self.batch_size = batch_size or cfg.get("batch_size", 16) 
+        
+        # Ưu tiên lấy token từ tham số, sau đó đến OS Env, cuối cùng là YAML
+        self.hf_token = os.environ.get("HF_TOKEN") or cfg.get("hf_token")
+        if not self.hf_token:
+            logger.warning("Không tìm thấy HF_TOKEN. API có thể sẽ từ chối truy cập.")
 
         self.vector_store = vector_store
         self.cache = cache or EmbeddingCache()
-        self._model = None
+
+        self.api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{self.model_name}"
 
         logger.info(
-            f"EmbeddingPipeline: model={self.model_name}, "
+            f"EmbeddingPipeline (API Mode): model={self.model_name}, "
             f"batch_size={self.batch_size}"
         )
 
-    def _init_model(self):
-        """Lazy-load sentence-transformers model."""
-        if self._model is not None:
-            return self._model
+    def _call_hf_api(self, texts: List[str], max_retries: int = 5) -> List[List[float]]:
+        """
+        Gọi Hugging Face API để lấy embeddings.
+        Tích hợp cơ chế retry xử lý lỗi 503 (Model is loading).
+        """
+        headers = {}
+        if self.hf_token:
+            headers["Authorization"] = f"Bearer {self.hf_token}"
 
-        try:
-            from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.model_name)
-            logger.info(f"Loaded embedding model: {self.model_name}")
-            return self._model
-        except ImportError:
-            raise ImportError(
-                "Cần cài sentence-transformers: pip install sentence-transformers"
-            )
-        except Exception as e:
-            logger.error(f"Lỗi load model {self.model_name}: {e}")
-            raise
+        payload = {
+            "inputs": texts,
+            "options": {"wait_for_model": True}
+        }
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(self.api_url, headers=headers, json=payload, timeout=60)
+                
+                if response.status_code == 200:
+                    embeddings = response.json()
+                    # BGE-M3 API trả về mảng 2D (batch_size, dim), đôi khi bị bọc thêm 1 chiều
+                    # Đoạn này đảm bảo dữ liệu là List[List[float]]
+                    if isinstance(embeddings, list) and isinstance(embeddings[0], list):
+                        if isinstance(embeddings[0][0], list): # Xử lý nếu trả về 3D [batch, seq_len, dim]
+                            # Pooling mặc định (lấy CLS token - phần tử đầu tiên của mỗi đoạn)
+                            return [doc[0] for doc in embeddings]
+                        return embeddings
+                    else:
+                        raise ValueError(f"Định dạng JSON trả về không mong đợi: {type(embeddings)}")
+
+                elif response.status_code == 503:
+                    # Lỗi cold-start đặc trưng của Hugging Face Free API
+                    estimated_time = response.json().get("estimated_time", 15)
+                    logger.info(f"[API] Mô hình đang khởi động. Chờ {estimated_time}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(estimated_time)
+                else:
+                    logger.error(f"API Error {response.status_code}: {response.text}")
+                    raise Exception(f"HF API trả về lỗi: {response.text}")
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Lỗi mạng khi gọi HF API: {e}")
+                time.sleep(5) # Chờ 5s rồi thử lại nếu lỗi mạng
+        
+        raise Exception("Đã hết số lần thử (retries) gọi Hugging Face API.")
 
     def _init_vector_store(self):
         """Lazy-init VectorStore nếu chưa truyền vào."""
@@ -92,15 +120,8 @@ class EmbeddingPipeline:
         chunks: List[Chunk],
         skip_non_embeddable: bool = True,
     ) -> List[EmbeddingRecord]:
-        """Chạy embedding pipeline end-to-end.
-
-        Args:
-            chunks: danh sách Chunk đã enrich metadata.
-            skip_non_embeddable: bỏ qua chunks có embeddable=False.
-
-        Returns:
-            List[EmbeddingRecord] cho các chunks đã embed thành công.
-        """
+        """Chạy embedding pipeline end-to-end qua API."""
+        
         # 1. Lọc embeddable
         if skip_non_embeddable:
             embeddable_chunks = [c for c in chunks if c.embeddable]
@@ -127,9 +148,8 @@ class EmbeddingPipeline:
             f"{len(uncached_indices)} misses"
         )
 
-        # 3. Embed uncached
+        # 3. Embed uncached qua API
         if uncached_indices:
-            model = self._init_model()
             uncached_texts = [texts[i] for i in uncached_indices]
 
             # Batch embed với progress
@@ -139,16 +159,13 @@ class EmbeddingPipeline:
                 end = min(start + self.batch_size, total)
                 batch = uncached_texts[start:end]
 
-                batch_embeddings = model.encode(
-                    batch,
-                    normalize_embeddings=True,
-                    show_progress_bar=False,
-                ).tolist()
-
+                logger.info(f" Đang gọi API cho batch {start + 1}-{end}/{total}...")
+                
+                # SỬ DỤNG API Ở ĐÂY THAY VÌ MÔ HÌNH LOCAL
+                batch_embeddings = self._call_hf_api(batch)
+                
                 all_new_embeddings.extend(batch_embeddings)
-                logger.info(
-                    f"  Embedded batch {start + 1}-{end}/{total}"
-                )
+                logger.info(f" Hoàn thành batch {start + 1}-{end}/{total}")
 
             # Ghi vào cache
             self.cache.set_batch(uncached_texts, self.model_name, all_new_embeddings)
