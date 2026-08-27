@@ -13,7 +13,6 @@ from src.agents.retriever.reranker import RetrieverReranker
 from src.database.mysql_loader import MySQLLoader
 from src.database.vector_store import VectorStore
 
-
 class RetrieverAgent(BaseAgent):
 	"""Retrieves relevant chunks from vector store and table data from SQL layer."""
 

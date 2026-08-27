@@ -10,7 +10,8 @@ retrieval:
   hybrid_search_alpha: 0.5  # tỉ lệ vector vs BM25
 
 embedding:
-  model_name: "BAAI/bge-m3"
+  API_URL: "https://api.jina.ai/v1/embeddings"
+  model_name: "jina-embeddings-v4"
   batch_size: 32
 
 ocr:

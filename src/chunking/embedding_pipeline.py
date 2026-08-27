@@ -5,6 +5,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib import response
 
 import requests
 import yaml
@@ -15,7 +16,6 @@ from src.database.vector_store import VectorStore
 from src.utils.logger import get_logger
 
 logger = get_logger("src.chunking.embedding_pipeline")
-
 
 def _load_embedding_config() -> Dict[str, Any]:
     """Load embedding config từ settings.yaml."""
@@ -39,75 +39,188 @@ class EmbeddingPipeline:
 
     def __init__(
         self,
+        api_url: Optional[str] = None,
         model_name: Optional[str] = None,
-        batch_size: Optional[int] = None,
         vector_store: Optional[VectorStore] = None,
         cache: Optional[EmbeddingCache] = None,
     ):
         cfg = _load_embedding_config()
-        self.model_name = model_name or cfg.get("model_name", "BAAI/bge-m3")
-        # Gọi API nên hạ batch_size xuống (khoảng 16 hoặc 32) để tránh timeout/payload too large
-        self.batch_size = batch_size or cfg.get("batch_size", 16) 
-        
-        # Ưu tiên lấy token từ tham số, sau đó đến OS Env, cuối cùng là YAML
-        self.hf_token = os.environ.get("HF_TOKEN") or cfg.get("hf_token")
-        if not self.hf_token:
-            logger.warning("Không tìm thấy HF_TOKEN. API có thể sẽ từ chối truy cập.")
+        self.model_name = model_name or cfg.get("model_name", "jina-embeddings-v4")
+        self.api_url = api_url or cfg.get("API_URL", "https://api.jina.ai/v1/embeddings")
+        self.jina_token = os.environ.get("JINA_TOKEN")
+        if not self.jina_token:
+            logger.warning("Không tìm thấy JINA_TOKEN. API có thể sẽ từ chối truy cập.")
 
         self.vector_store = vector_store
         self.cache = cache or EmbeddingCache()
 
-        self.api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{self.model_name}"
-
         logger.info(
             f"EmbeddingPipeline (API Mode): model={self.model_name}, "
-            f"batch_size={self.batch_size}"
         )
 
-    def _call_hf_api(self, texts: List[str], max_retries: int = 5) -> List[List[float]]:
-        """
-        Gọi Hugging Face API để lấy embeddings.
-        Tích hợp cơ chế retry xử lý lỗi 503 (Model is loading).
-        """
-        headers = {}
-        if self.hf_token:
-            headers["Authorization"] = f"Bearer {self.hf_token}"
+    def _call_jira_api(self, texts: List[str], max_retries: int = 5) -> List[List[float]]:
+        headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.jina_token}",
+                    }
 
         payload = {
-            "inputs": texts,
-            "options": {"wait_for_model": True}
-        }
+                    "model": self.model_name,
+                    "input": texts
+                    }             
 
         for attempt in range(max_retries):
+
             try:
-                response = requests.post(self.api_url, headers=headers, json=payload, timeout=60)
-                
+                response = requests.post(
+                    self.api_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=60
+                )
+
                 if response.status_code == 200:
-                    embeddings = response.json()
-                    # BGE-M3 API trả về mảng 2D (batch_size, dim), đôi khi bị bọc thêm 1 chiều
-                    # Đoạn này đảm bảo dữ liệu là List[List[float]]
-                    if isinstance(embeddings, list) and isinstance(embeddings[0], list):
-                        if isinstance(embeddings[0][0], list): # Xử lý nếu trả về 3D [batch, seq_len, dim]
-                            # Pooling mặc định (lấy CLS token - phần tử đầu tiên của mỗi đoạn)
-                            return [doc[0] for doc in embeddings]
-                        return embeddings
+
+                    result = response.json()
+
+                    embeddings = [
+                        item["embedding"]
+                        for item in result["data"]
+                    ]
+
+                    logger.info(
+                        f"[JINA] Embedding successful "
+                        f"({len(embeddings)} texts)"
+                    )
+
+                    return embeddings
+
+                elif response.status_code == 429:
+
+                    # Jina may provide Retry-After
+                    retry_after = response.headers.get("Retry-After")
+
+                    if retry_after:
+                        try:
+                            wait_time = float(retry_after)
+                        except ValueError:
+                            wait_time = 2 ** attempt
                     else:
-                        raise ValueError(f"Định dạng JSON trả về không mong đợi: {type(embeddings)}")
+                        # Exponential backoff + small random jitter
+                        wait_time = (2 ** attempt) + random.uniform(0, 1)
 
-                elif response.status_code == 503:
-                    # Lỗi cold-start đặc trưng của Hugging Face Free API
-                    estimated_time = response.json().get("estimated_time", 15)
-                    logger.info(f"[API] Mô hình đang khởi động. Chờ {estimated_time}s... (Attempt {attempt+1}/{max_retries})")
-                    time.sleep(estimated_time)
+                    logger.warning(
+                        f"[JINA] Rate limit (429). "
+                        f"Chờ {wait_time:.2f}s... "
+                        f"(Attempt {attempt + 1}/{max_retries})"
+                    )
+
+                    time.sleep(wait_time)
+
+                # ==================================================
+                # 3. SERVER ERRORS
+                # ==================================================
+                elif response.status_code in [500, 502, 503, 504]:
+
+                    wait_time = min(
+                        2 ** attempt,
+                        30
+                    )
+
+                    logger.warning(
+                        f"[JINA] Server error {response.status_code}. "
+                        f"Chờ {wait_time}s... "
+                        f"(Attempt {attempt + 1}/{max_retries})"
+                    )
+
+                    time.sleep(wait_time)
+
+                # ==================================================
+                # 4. OTHER HTTP ERRORS
+                # ==================================================
                 else:
-                    logger.error(f"API Error {response.status_code}: {response.text}")
-                    raise Exception(f"HF API trả về lỗi: {response.text}")
 
+                    logger.error(
+                        f"[JINA] API Error "
+                        f"{response.status_code}: "
+                        f"{response.text}"
+                    )
+
+                    # Những lỗi như:
+                    # 400 = Bad Request
+                    # 401 = Unauthorized
+                    # 403 = Forbidden
+                    # 404 = Not Found
+                    #
+                    # Retry thường không giải quyết được,
+                    # nên raise luôn.
+
+                    raise Exception(
+                        f"Jina API trả về lỗi "
+                        f"{response.status_code}: "
+                        f"{response.text}"
+                    )
+
+            # ======================================================
+            # 5. TIMEOUT
+            # ======================================================
+            except requests.exceptions.Timeout:
+
+                wait_time = min(
+                    2 ** attempt,
+                    30
+                )
+
+                logger.warning(
+                    f"[JINA] Request timeout. "
+                    f"Chờ {wait_time}s... "
+                    f"(Attempt {attempt + 1}/{max_retries})"
+                )
+
+                time.sleep(wait_time)
+
+            # ======================================================
+            # 6. NETWORK ERROR
+            # ======================================================
+            except requests.exceptions.ConnectionError as e:
+
+                wait_time = min(
+                    2 ** attempt,
+                    30
+                )
+
+                logger.warning(
+                    f"[JINA] Connection error: {e}. "
+                    f"Chờ {wait_time}s... "
+                    f"(Attempt {attempt + 1}/{max_retries})"
+                )
+
+                time.sleep(wait_time)
+
+            # ======================================================
+            # 7. OTHER REQUEST ERRORS
+            # ======================================================
             except requests.exceptions.RequestException as e:
-                logger.error(f"Lỗi mạng khi gọi HF API: {e}")
-                time.sleep(5) # Chờ 5s rồi thử lại nếu lỗi mạng
-        
-        raise Exception("Đã hết số lần thử (retries) gọi Hugging Face API.")
+
+                wait_time = min(
+                    2 ** attempt,
+                    30
+                )
+
+                logger.warning(
+                    f"[JINA] Request error: {e}. "
+                    f"Chờ {wait_time}s... "
+                    f"(Attempt {attempt + 1}/{max_retries})"
+                )
+
+                time.sleep(wait_time)
+
+        # ==========================================================
+        # 8. ALL RETRIES FAILED
+        # ==========================================================
+
+        raise Exception(
+            f"Đã hết {max_retries} lần thử khi gọi Jina API.")
 
     def _init_vector_store(self):
         """Lazy-init VectorStore nếu chưa truyền vào."""
@@ -152,20 +265,8 @@ class EmbeddingPipeline:
         if uncached_indices:
             uncached_texts = [texts[i] for i in uncached_indices]
 
-            # Batch embed với progress
-            all_new_embeddings = []
-            total = len(uncached_texts)
-            for start in range(0, total, self.batch_size):
-                end = min(start + self.batch_size, total)
-                batch = uncached_texts[start:end]
-
-                logger.info(f" Đang gọi API cho batch {start + 1}-{end}/{total}...")
-                
-                # SỬ DỤNG API Ở ĐÂY THAY VÌ MÔ HÌNH LOCAL
-                batch_embeddings = self._call_hf_api(batch)
-                
-                all_new_embeddings.extend(batch_embeddings)
-                logger.info(f" Hoàn thành batch {start + 1}-{end}/{total}")
+            all_new_embeddings = self._call_jira_api(uncached_texts)
+            logger.info(f" Hoàn thành embedding {len(all_new_embeddings)} chunks qua API.")
 
             # Ghi vào cache
             self.cache.set_batch(uncached_texts, self.model_name, all_new_embeddings)
