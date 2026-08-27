@@ -58,7 +58,7 @@ class EmbeddingPipeline:
             f"EmbeddingPipeline (API Mode): model={self.model_name}, "
         )
 
-    def _call_jira_api(self, texts: List[str], max_retries: int = 5) -> List[List[float]]:
+    def _call_jina_api(self, texts: List[str], max_retries: int = 5) -> List[List[float]]:
         headers = {
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.jina_token}",
@@ -265,7 +265,7 @@ class EmbeddingPipeline:
         if uncached_indices:
             uncached_texts = [texts[i] for i in uncached_indices]
 
-            all_new_embeddings = self._call_jira_api(uncached_texts)
+            all_new_embeddings = self._call_jina_api(uncached_texts)
             logger.info(f" Hoàn thành embedding {len(all_new_embeddings)} chunks qua API.")
 
             # Ghi vào cache

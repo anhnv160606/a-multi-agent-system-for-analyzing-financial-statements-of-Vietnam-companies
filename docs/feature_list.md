@@ -95,10 +95,10 @@
 
 | # | Task | Chi tiết | Người | Status |
 |---|------|----------|-------|--------|
-| 3.12 | DuPont Analysis | Phân tích ROE theo framework DuPont 3 bước / 5 bước | A | `[ ]` |
-| 3.13 | Trend Analysis | Phân tích xu hướng qua các năm (revenue growth, margin trend) | A | `[ ]` |
-| 3.14 | Common-size Analysis | Phân tích tỷ trọng (mỗi mục / tổng tài sản or doanh thu) | A | `[ ]` |
-| 3.15 | Peer Comparison | So sánh chỉ số với công ty cùng ngành | A+B | `[ ]` |
+| 3.12 | DuPont Analysis | Phân tích ROE theo framework DuPont 3 bước / 5 bước | A | `[X]` |
+| 3.13 | Trend Analysis | Phân tích xu hướng qua các năm (revenue growth, margin trend) | A | `[X]` |
+| 3.14 | Common-size Analysis | Phân tích tỷ trọng (mỗi mục / tổng tài sản or doanh thu) | A | `[X]` |
+| 3.15 | Peer Comparison | So sánh chỉ số với công ty cùng ngành | A+B | `[X]` |
 
 ---
 
