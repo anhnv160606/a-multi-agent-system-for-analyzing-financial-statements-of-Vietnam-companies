@@ -85,11 +85,11 @@
 
 | # | Task | Chi tiết | Người | Status |
 |---|------|----------|-------|--------|
-| 3.7 | PoT Code Generation | LLM sinh Python code từ câu hỏi tài chính | B | `[ ]` |
-| 3.8 | Sandbox Execution | Docker container / restricted Python để chạy code sinh ra | B | `[ ]` |
-| 3.9 | Financial Functions Library | Bộ hàm sẵn: ROE, ROA, CAGR, P/E, EV/EBITDA, Current Ratio, ... | B | `[ ]` |
-| 3.10 | Calculation Validation | Kiểm tra tính hợp lý (Tổng TS = Nợ + Vốn CSH, tỷ lệ không âm, ...) | B | `[ ]` |
-| 3.11 | SQL Query Agent | Agent sinh SQL query để truy vấn MySQL (bảng số liệu) | B | `[ ]` |
+| 3.7 | PoT Code Generation | LLM sinh Python code từ câu hỏi tài chính | B | `[X]` |
+| 3.8 | Sandbox Execution | Docker container / restricted Python để chạy code sinh ra | B | `[X]` |
+| 3.9 | Financial Functions Library | Bộ hàm sẵn: ROE, ROA, CAGR, P/E, EV/EBITDA, Current Ratio, ... | B | `[X]` |
+| 3.10 | Calculation Validation | Kiểm tra tính hợp lý (Tổng TS = Nợ + Vốn CSH, tỷ lệ không âm, ...) | B | `[X]` |
+| 3.11 | SQL Query Agent | Agent sinh SQL query để truy vấn MySQL (bảng số liệu) | B | `[X]` |
 
 ### 3C. Analysis Agent
 

@@ -47,7 +47,7 @@ class TableChunker:
         self,
         summary_threshold: Optional[int] = None,
         api_key: Optional[str] = None,
-        model_name: str = "gemini-2.0-flash",
+        model_name: str = "gemini-3.1-flash-lite",
     ):
         cfg = _load_table_config()
         self.summary_threshold = summary_threshold or cfg.get("table_summary_threshold", 2000)

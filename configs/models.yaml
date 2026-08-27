@@ -1,18 +1,36 @@
+# ==============================================================================
+# MULTI-AGENT MODEL CONFIGURATION (HIGH-SPEED BALANCED HYBRID)
+# ==============================================================================
+
+# 1. Router Agent: Phân loại câu hỏi siêu tốc (Groq 0.05s)
 router:
-  model: "gemini-2.0-flash"
+  provider: "groq"
+  model: "qwen/qwen3.8-27b"
   temperature: 0.0
 
 agents:
+  # 2. Agent mặc định chung
   default:
-    model: "gemini-2.5-pro"
+    provider: "groq"
+    model: "qwen/qwen3.8-27b"
     temperature: 0.2
     max_tokens: 4096
-  
+
+  # 3. Calculator & SQL Agent: Sinh SQL & Code Python (Groq 0.3s)
   calculator:
-    model: "gemini-2.5-pro"
+    provider: "groq"
+    model: "qwen/qwen3.8-27b"
     temperature: 0.0 
-  
+
+  # 4. Analysis Agent: Bóc tách DuPont & Sức khỏe tài chính
+  analysis:
+    provider: "gemini"
+    model: "gemini-3.1-flash-lite"
+    temperature: 0.2
+
+  # 5. Report Writer Agent: Tổng hợp báo cáo tài chính hoàn chỉnh (Google Gemini 0.8s)
   report_writer:
-    model: "gemini-2.5-pro"
-    temperature: 0.5
+    provider: "gemini"
+    model: "gemini-3.1-flash-lite"
+    temperature: 0.4
     max_tokens: 8192

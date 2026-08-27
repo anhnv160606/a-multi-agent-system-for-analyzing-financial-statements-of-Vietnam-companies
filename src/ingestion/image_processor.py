@@ -22,7 +22,7 @@ class ImageProcessor:
     Uses Google Gemini Vision API (Free Tier) with offline fallback.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.1-flash-lite"):
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self.model_name = model_name
         self.prompt_config = self._load_prompt_template()
