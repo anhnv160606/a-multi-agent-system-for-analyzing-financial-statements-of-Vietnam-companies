@@ -1,7 +1,11 @@
 """LangGraph Graph Definition cho hệ thống phân tích tài chính (MVP).
 
-Topology MVP (3 agents):
-    START --> router_node --> retriever_node --> calculator_node --> analysis_node --> END
+Topology MVP (5 agents):
+    START --> router_node --> retriever_node --> calculator_node
+                                                      --> analysis_node
+                                                      --> synthesis_node
+                                                      --> report_node
+                                                      --> evaluator_node --> END / RETRY
 
 Khi advanced agents được implement (đồng đội code sau), chỉ cần thêm nodes và
 edges vào hàm build_graph() — không cần sửa state.py hay nodes.py.
@@ -54,11 +58,11 @@ def build_graph(
 ) -> Any:
     """Build và compile StateGraph cho toàn bộ hệ thống Multi-Agent (Phase 5).
 
-    Topology:
+    Topology (MVP — 5 agents chính):
         START --> router_node
-                    ├── (query_type == 'calculate') ──> calculator_node ──> analysis_node ──> evaluator_node ──> END / RETRY
-                    ├── (query_type == 'simple')    ──> retriever_node  ──────────────────> evaluator_node ──> END / RETRY
-                    └── (query_type == 'analysis')  ──> retriever_node  ──> calculator_node ──> analysis_node ──> evaluator_node ──> END / RETRY
+                    ├── (query_type == 'calculate')  --> calculator_node --> analysis_node --> synthesis_node --> report_node --> evaluator_node --> END / RETRY
+                    ├── (query_type == 'simple')     --> retriever_node  ----------------------------------------------------> evaluator_node --> END / RETRY
+                    └── (query_type == 'analysis')   --> retriever_node  --> calculator_node --> analysis_node --> synthesis_node --> report_node --> evaluator_node --> END / RETRY
     """
     # 1. Khởi tạo tất cả agent nodes
     nodes = build_nodes(
@@ -76,6 +80,8 @@ def build_graph(
     graph.add_node("retriever",  nodes["retriever"])
     graph.add_node("calculator", nodes["calculator"])
     graph.add_node("analysis",   nodes["analysis"])
+    graph.add_node("synthesis",  nodes["synthesis"])
+    graph.add_node("report",     nodes["report"])
     graph.add_node("evaluator",  nodes["evaluator"])
 
     # 4. Entry point: bắt đầu bằng router_node
@@ -101,7 +107,9 @@ def build_graph(
     )
 
     graph.add_edge("calculator", "analysis")
-    graph.add_edge("analysis",   "evaluator")
+    graph.add_edge("analysis",   "synthesis")
+    graph.add_edge("synthesis",  "report")
+    graph.add_edge("report",     "evaluator")
 
     graph.add_conditional_edges(
         "evaluator",
@@ -119,7 +127,8 @@ def build_graph(
         "build_graph: graph compiled successfully with dynamic conditional edges",
         extra={
             "event": "graph_compiled",
-            "nodes": ["router", "retriever", "calculator", "analysis", "evaluator"],
+            "nodes": ["router", "retriever", "calculator", "analysis",
+                      "synthesis", "report", "evaluator"],
         },
     )
     return compiled

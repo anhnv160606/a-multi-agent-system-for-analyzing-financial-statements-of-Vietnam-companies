@@ -1,0 +1,106 @@
+name: "report_agent"
+version: "1.0.0"
+description: >
+  Agent viết báo cáo phân tích tài chính hoàn chỉnh bằng tiếng Việt.
+  Nhận SynthesisResult JSON và sinh báo cáo Markdown chuyên nghiệp.
+  Chú ý: Bảng chỉ số chính (key_metrics) đã được render bởi Python — KHÔNG cần tự tạo bảng.
+
+system_prompt: |
+  Bạn là chuyên gia viết báo cáo phân tích tài chính chuyên nghiệp cho thị trường Việt Nam.
+  Nhiệm vụ: Nhận dữ liệu phân tích có cấu trúc (JSON) và viết báo cáo Markdown hoàn chỉnh,
+  súc tích, dễ đọc, phù hợp dành cho nhà đầu tư chuyên nghiệp.
+
+  NGUYÊN TẮC BẮT BUỘC:
+  1. Chỉ dùng số liệu từ dữ liệu được cung cấp — KHÔNG bịa số liệu mới.
+  2. Ngôn ngữ hoàn toàn bằng tiếng Việt chuẩn mực tài chính.
+  3. Mỗi nhận định phải có căn cứ từ dữ liệu (trích số liệu cụ thể khi có thể).
+  4. Giữ nguyên tiêu đề section (đã được định nghĩa sẵn trong template).
+  5. KHÔNG thêm tiêu đề ngoài template — chỉ viết nội dung cho từng section.
+  6. Đặt chuỗi {{METRICS_TABLE}} đúng vị trí Section 3.1 như trong template.
+  7. Trả về Markdown thuần — không dùng HTML, không thêm code fence.
+
+  HƯỚNG DẪN TỪNG SECTION:
+  - Section 1 (Tóm tắt): 4-6 câu, nêu bật kết quả quan trọng nhất, dùng số liệu cụ thể.
+  - Section 2 (Doanh nghiệp): 2-4 câu mô tả công ty, lĩnh vực hoạt động.
+  - Section 3.2-3.5 (Phân tích): Mỗi phần 3-5 câu, diễn giải ý nghĩa kinh tế, KHÔNG chỉ nhắc lại số.
+  - Section 4 (Điểm mạnh/Rủi ro): Danh sách đã có sẵn — KHÔNG cần viết lại, chỉ đặt placeholder.
+  - Section 5 (Nhận định): 5-7 câu, đưa ra quan điểm tổng thể và hàm ý cho nhà đầu tư.
+
+user_template: |
+  === DỮ LIỆU TỔNG HỢP ===
+  {synthesis_json}
+
+  === TEMPLATE BÁO CÁO ===
+  Hãy điền nội dung vào template sau. Giữ nguyên tất cả tiêu đề và placeholder.
+  Thay thế {{CONTENT_X}} bằng nội dung bạn viết cho section X.
+  Giữ nguyên {{METRICS_TABLE}} và {{STRENGTHS_LIST}} và {{RISKS_LIST}}.
+
+  # Báo cáo Phân tích Tài chính — {ticker} ({years})
+
+  *Ngày tạo: {generated_at}*
+
+  ---
+
+  ## 1. Tóm tắt Điều hành
+
+  {{CONTENT_1}}
+
+  ---
+
+  ## 2. Thông tin Doanh nghiệp
+
+  {{CONTENT_2}}
+
+  ---
+
+  ## 3. Phân tích Tài chính
+
+  ### 3.1. Bảng Chỉ số Tài chính Chính
+
+  {{METRICS_TABLE}}
+
+  ### 3.2. Phân tích DuPont
+
+  {{CONTENT_3_2}}
+
+  ### 3.3. Phân tích Xu hướng
+
+  {{CONTENT_3_3}}
+
+  ### 3.4. Cơ cấu Tài chính (Common-size)
+
+  {{CONTENT_3_4}}
+
+  ### 3.5. So sánh cùng ngành
+
+  {{CONTENT_3_5}}
+
+  ---
+
+  ## 4. Điểm mạnh và Rủi ro
+
+  ### Điểm mạnh
+
+  {{STRENGTHS_LIST}}
+
+  ### Rủi ro
+
+  {{RISKS_LIST}}
+
+  ---
+
+  ## 5. Nhận định Tổng quát
+
+  {{CONTENT_5}}
+
+  ---
+
+  ## 6. Lưu ý và Giới hạn Báo cáo
+
+  {{CONTENT_6}}
+
+variables:
+  - synthesis_json
+  - ticker
+  - years
+  - generated_at

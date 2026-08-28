@@ -243,9 +243,113 @@ def analysis_node(
     return state
 
 
-# ---------------------------------------------------------------------------
-# Factory function
-# ---------------------------------------------------------------------------
+def synthesis_node(
+    state: FinancialAnalysisState,
+    agent: Any,
+) -> FinancialAnalysisState:
+    """Node wrapping SynthesisAgent.
+
+    Guard: Cần ít nhất analysis_results HOẶC calculator_results.
+    Nếu cả 2 đều rỗng → skip để tránh gọi LLM với context trống.
+
+    Đọc:  state["analysis_results"], state["calculator_results"],
+          state["retrieved_chunks"], state["query"], state["company_ticker"]
+    Ghi:  state["synthesis_results"], state["confidence_score"],
+          state["provenance"], state["errors"]
+    """
+    run_id = state.get("run_id", "")
+
+    has_analysis = bool(state.get("analysis_results"))
+    has_calc = bool(state.get("calculator_results"))
+    if not has_analysis and not has_calc:
+        logger.warning(
+            "synthesis_node: skipped — no analysis_results or calculator_results",
+            extra={"event": "node_skipped", "node": "synthesis", "run_id": run_id},
+        )
+        _append_state_error(
+            state,
+            "synthesis_node: skipped — khong co analysis_results lan calculator_results.",
+        )
+        return state
+
+    logger.info(
+        "synthesis_node: start",
+        extra={
+            "event": "node_start",
+            "node": "synthesis",
+            "run_id": run_id,
+            "ticker": state.get("company_ticker"),
+        },
+    )
+    try:
+        state = agent.invoke(state)
+        synthesis_ok = isinstance(state.get("synthesis_results"), dict)
+        logger.info(
+            "synthesis_node: done",
+            extra={
+                "event": "node_done",
+                "node": "synthesis",
+                "run_id": run_id,
+                "success": synthesis_ok,
+                "confidence": state.get("confidence_score"),
+            },
+        )
+    except Exception as exc:
+        _append_node_error(state, node_name="synthesis_node", exc=exc)
+    return state
+
+
+def report_node(
+    state: FinancialAnalysisState,
+    agent: Any,
+) -> FinancialAnalysisState:
+    """Node wrapping ReportAgent.
+
+    Guard: synthesis_results phải có trong state.
+    Nếu không có → skip và ghi lỗi.
+
+    Đọc:  state["synthesis_results"], state["query"], state["company_ticker"]
+    Ghi:  state["final_report"], state["provenance"], state["errors"]
+    """
+    run_id = state.get("run_id", "")
+
+    if not isinstance(state.get("synthesis_results"), dict):
+        logger.warning(
+            "report_node: skipped — synthesis_results not available",
+            extra={"event": "node_skipped", "node": "report", "run_id": run_id},
+        )
+        _append_state_error(
+            state,
+            "report_node: skipped — synthesis_results khong co hoac sai dinh dang.",
+        )
+        return state
+
+    logger.info(
+        "report_node: start",
+        extra={
+            "event": "node_start",
+            "node": "report",
+            "run_id": run_id,
+            "ticker": state.get("company_ticker"),
+        },
+    )
+    try:
+        state = agent.invoke(state)
+        report_ok = bool(state.get("final_report"))
+        logger.info(
+            "report_node: done",
+            extra={
+                "event": "node_done",
+                "node": "report",
+                "run_id": run_id,
+                "success": report_ok,
+                "report_chars": len(state.get("final_report") or ""),
+            },
+        )
+    except Exception as exc:
+        _append_node_error(state, node_name="report_node", exc=exc)
+    return state
+
 
 def build_nodes(
     config: dict[str, Any],
@@ -275,6 +379,8 @@ def build_nodes(
     from src.agents.retriever.agent import RetrieverAgent
     from src.agents.calculator.agent import CalculatorAgent
     from src.agents.analysis.agent import AnalysisAgent
+    from src.agents.synthesis.agent import SynthesisAgent
+    from src.agents.report.agent import ReportAgent
     from src.orchestrator.router import RouterAgent
     from src.orchestrator.evaluator import EvaluatorAgent
 
@@ -282,6 +388,8 @@ def build_nodes(
     retriever_cfg = config.get("retriever") or {}
     calculator_cfg = config.get("calculator") or {}
     analysis_cfg = config.get("analysis") or {}
+    synthesis_cfg = config.get("synthesis") or {}
+    report_cfg = config.get("report") or {}
     evaluator_cfg = config.get("evaluator") or {}
 
     router_agent = RouterAgent(
@@ -302,6 +410,14 @@ def build_nodes(
         config=analysis_cfg,
         llm=llm,
     )
+    synthesis_agent = SynthesisAgent(
+        config=synthesis_cfg,
+        llm=llm,
+    )
+    report_agent = ReportAgent(
+        config=report_cfg,
+        llm=llm,
+    )
     evaluator_agent = EvaluatorAgent(
         config=evaluator_cfg,
         llm=llm,
@@ -311,17 +427,22 @@ def build_nodes(
         "build_nodes: agents initialized",
         extra={
             "event": "nodes_built",
-            "agents": ["RouterAgent", "RetrieverAgent", "CalculatorAgent", "AnalysisAgent", "EvaluatorAgent"],
+            "agents": [
+                "RouterAgent", "RetrieverAgent", "CalculatorAgent",
+                "AnalysisAgent", "SynthesisAgent", "ReportAgent", "EvaluatorAgent",
+            ],
             "llm_available": llm is not None,
         },
     )
 
     return {
-        "router": lambda state: router_node(state, router_agent),
-        "retriever": lambda state: retriever_node(state, retriever_agent),
+        "router":     lambda state: router_node(state, router_agent),
+        "retriever":  lambda state: retriever_node(state, retriever_agent),
         "calculator": lambda state: calculator_node(state, calculator_agent),
-        "analysis": lambda state: analysis_node(state, analysis_agent),
-        "evaluator": lambda state: evaluator_node(state, evaluator_agent),
+        "analysis":   lambda state: analysis_node(state, analysis_agent),
+        "synthesis":  lambda state: synthesis_node(state, synthesis_agent),
+        "report":     lambda state: report_node(state, report_agent),
+        "evaluator":  lambda state: evaluator_node(state, evaluator_agent),
     }
 
 
