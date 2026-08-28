@@ -28,6 +28,11 @@ from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
 
+from src.orchestrator.edges import (
+    route_by_query_type,
+    route_after_retriever,
+    route_after_evaluator,
+)
 from src.orchestrator.nodes import build_nodes
 from src.orchestrator.state import FinancialAnalysisState
 from src.utils.logger import get_logger
@@ -41,33 +46,19 @@ logger = get_logger("src.orchestrator.graph")
 
 def build_graph(
     config: dict[str, Any],
-    llm: Any,
+    llm: Any = None,
     *,
     vector_store: Any = None,
     mysql_loader: Any = None,
     checkpointer: Any = None,
 ) -> Any:
-    """Xây dựng và compile LangGraph graph cho MVP (router + 3 agents).
+    """Build và compile StateGraph cho toàn bộ hệ thống Multi-Agent (Phase 5).
 
-    Args:
-        config:       Dict cấu hình tổng. Các sub-keys được forward xuống từng agent:
-                          config["retriever"]  → RetrieverAgent
-                          config["calculator"] → CalculatorAgent
-                          config["analysis"]   → AnalysisAgent
-        llm:          LLM instance dùng chung cho tất cả agents.
-                      Truyền None để chạy offline/test mode (agents dùng fallback heuristic).
-        vector_store: VectorStore instance cho RetrieverAgent (tuỳ chọn).
-                      Nếu None, RetrieverAgent sẽ tự khởi tạo.
-        mysql_loader: MySQLLoader instance cho RetrieverAgent (tuỳ chọn).
-                      Nếu None, RetrieverAgent sẽ tự khởi tạo.
-        checkpointer: LangGraph checkpointer cho persistence (tuỳ chọn).
-                      None = không persist state giữa các lần chạy (đủ cho MVP).
-                      Ví dụ để bật: from langgraph.checkpoint.memory import MemorySaver
-                                    checkpointer=MemorySaver()
-
-    Returns:
-        CompiledGraph — sẵn sàng gọi bằng graph.invoke(initial_state) hoặc
-        graph.stream(initial_state) để streaming từng bước.
+    Topology:
+        START --> router_node
+                    ├── (query_type == 'calculate') ──> calculator_node ──> analysis_node ──> evaluator_node ──> END / RETRY
+                    ├── (query_type == 'simple')    ──> retriever_node  ──────────────────> evaluator_node ──> END / RETRY
+                    └── (query_type == 'analysis')  ──> retriever_node  ──> calculator_node ──> analysis_node ──> evaluator_node ──> END / RETRY
     """
     # 1. Khởi tạo tất cả agent nodes
     nodes = build_nodes(
@@ -85,35 +76,50 @@ def build_graph(
     graph.add_node("retriever",  nodes["retriever"])
     graph.add_node("calculator", nodes["calculator"])
     graph.add_node("analysis",   nodes["analysis"])
+    graph.add_node("evaluator",  nodes["evaluator"])
 
     # 4. Entry point: bắt đầu bằng router_node
     graph.set_entry_point("router")
 
-    # 5. Edges — tuyến tính trong MVP
-    #    Khi đồng đội implement router.py, có thể thêm conditional_edges ở đây:
-    #
-    #    graph.add_conditional_edges(
-    #        "router",
-    #        route_by_query_type,   # function trả về node name tiếp theo
-    #        {
-    #            "simple":    "retriever_only",   # path ngắn
-    #            "analysis":  "retriever",         # path đầy đủ
-    #        }
-    #    )
-    graph.add_edge("router",     "retriever")
-    graph.add_edge("retriever",  "calculator")
+    # 5. Dynamic Conditional Edges (Task 5.3, 5.4, 5.5, 5.7)
+    graph.add_conditional_edges(
+        "router",
+        route_by_query_type,
+        {
+            "calculator": "calculator",
+            "retriever":  "retriever",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "retriever",
+        route_after_retriever,
+        {
+            "calculator": "calculator",
+            END:          "evaluator",
+        },
+    )
+
     graph.add_edge("calculator", "analysis")
-    graph.add_edge("analysis",   END)
+    graph.add_edge("analysis",   "evaluator")
+
+    graph.add_conditional_edges(
+        "evaluator",
+        route_after_evaluator,
+        {
+            "router": "router",
+            END:      END,
+        },
+    )
 
     # 6. Compile
     compiled = graph.compile(checkpointer=checkpointer)
 
     logger.info(
-        "build_graph: graph compiled successfully",
+        "build_graph: graph compiled successfully with dynamic conditional edges",
         extra={
             "event": "graph_compiled",
-            "nodes": ["router", "retriever", "calculator", "analysis"],
-            "checkpointer": type(checkpointer).__name__ if checkpointer else "None",
+            "nodes": ["router", "retriever", "calculator", "analysis", "evaluator"],
         },
     )
     return compiled
@@ -125,8 +131,8 @@ def build_graph(
 
 def create_initial_state(
     query: str,
-    company_ticker: str,
-    fiscal_years: list[int],
+    company_ticker: str = "",
+    fiscal_years: list[int] | None = None,
     *,
     query_type: Literal["simple", "calculate", "analysis", "valuation"] | None = None,
     run_id: str | None = None,
@@ -135,13 +141,10 @@ def create_initial_state(
 ) -> FinancialAnalysisState:
     """Tạo initial state với các giá trị mặc định hợp lý.
 
-    Caller chỉ cần cung cấp 3 tham số bắt buộc; các field khác sẽ được
-    điền bởi các agent trong quá trình graph chạy.
-
     Args:
         query:          Câu hỏi phân tích của user.
-        company_ticker: Mã chứng khoán (sẽ được upper-case tự động).
-        fiscal_years:   Danh sách năm tài chính cần phân tích.
+        company_ticker: Mã chứng khoán (nếu để trống, RouterAgent sẽ tự trích xuất).
+        fiscal_years:   Danh sách năm tài chính (nếu để trống, RouterAgent sẽ tự trích xuất).
         query_type:     Nếu None → để router_node tự phân loại.
                         Nếu cung cấp → bypass router.
         run_id:         UUID tùy chỉnh. Nếu None → tự sinh UUID.
@@ -151,13 +154,14 @@ def create_initial_state(
     Returns:
         FinancialAnalysisState với required fields đã được điền.
     """
-    ticker = company_ticker.strip().upper()
+    ticker = company_ticker.strip().upper() if company_ticker else ""
+    years = sorted(set(fiscal_years)) if fiscal_years else []
     generated_run_id = run_id or str(uuid.uuid4())
 
     state = FinancialAnalysisState(
         query=query.strip(),
         company_ticker=ticker,
-        fiscal_years=sorted(set(fiscal_years)),  # dedup và sort
+        fiscal_years=years,
         run_id=generated_run_id,
         retry_count=0,
         max_retries=max_retries,

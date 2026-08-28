@@ -28,38 +28,67 @@ logger = get_logger("src.orchestrator.nodes")
 # Node functions
 # ---------------------------------------------------------------------------
 
-def router_node(state: FinancialAnalysisState) -> FinancialAnalysisState:
-    """Node placeholder cho RouterAgent.
+def router_node(
+    state: FinancialAnalysisState,
+    agent: Any,
+) -> FinancialAnalysisState:
+    """Node wrapping RouterAgent (Task 5.3).
 
-    Trong MVP này, nếu query_type chưa được set (router.py chưa implement),
-    mặc định coi là "analysis" để chạy full pipeline 3 agents.
+    Phân loại câu hỏi thành 'simple', 'calculate', 'analysis', 'valuation'
+    và trích xuất mã chứng khoán (ticker) cùng các năm tài chính (fiscal_years).
 
-    Khi đồng đội implement router.py, node này sẽ được thay thế bằng
-    logic phân loại thực sự (LLM hoặc rule-based classifier).
-
-    Đọc:  state["query"], state["query_type"] (nếu có)
-    Ghi:  state["query_type"] (nếu chưa có)
+    Đọc:  state["query"], state["company_ticker"], state["fiscal_years"]
+    Ghi:  state["query_type"], state["company_ticker"], state["fiscal_years"], state["confidence_score"]
     """
-    if not state.get("query_type"):
-        # Fallback: không có router → chạy full analysis pipeline
-        state["query_type"] = "analysis"  # type: ignore[typeddict-unknown-key]
+    run_id = state.get("run_id", "")
+    logger.info(
+        "router_node: start",
+        extra={
+            "event": "node_start",
+            "node": "router",
+            "run_id": run_id,
+            "query_preview": str(state.get("query", ""))[:100],
+        },
+    )
+    try:
+        state = agent.invoke(state)
         logger.info(
-            "router_node: query_type not set, defaulting to 'analysis'",
+            "router_node: done",
             extra={
-                "event": "router_fallback",
-                "run_id": state.get("run_id"),
-                "query_preview": str(state.get("query", ""))[:100],
-            },
-        )
-    else:
-        logger.info(
-            "router_node: query_type already set",
-            extra={
-                "event": "router_passthrough",
-                "run_id": state.get("run_id"),
+                "event": "node_done",
+                "node": "router",
+                "run_id": run_id,
                 "query_type": state.get("query_type"),
+                "ticker": state.get("company_ticker"),
             },
         )
+    except Exception as exc:
+        _append_node_error(state, "router_node", exc)
+        # Fallback to analysis on error
+        if not state.get("query_type"):
+            state["query_type"] = "analysis"
+
+    return state
+
+
+def evaluator_node(
+    state: FinancialAnalysisState,
+    agent: Any,
+) -> FinancialAnalysisState:
+    """Node wrapping EvaluatorAgent (Task 5.6 & 5.7).
+
+    Đánh giá độ tin cậy và quyết định kích hoạt vòng lặp Reflection / Retry.
+    """
+    run_id = state.get("run_id", "")
+    logger.info("evaluator_node: start", extra={"event": "node_start", "node": "evaluator", "run_id": run_id})
+    try:
+        state = agent.invoke(state)
+        logger.info(
+            "evaluator_node: done",
+            extra={"event": "node_done", "node": "evaluator", "run_id": run_id, "confidence": state.get("confidence_score")},
+        )
+    except Exception as exc:
+        _append_node_error(state, "evaluator_node", exc)
     return state
 
 
@@ -116,21 +145,6 @@ def calculator_node(
           state["confidence_score"], state["provenance"], state["errors"]
     """
     run_id = state.get("run_id", "")
-
-    # Guard: skip nếu không có dữ liệu đầu vào
-    has_chunks = bool(state.get("retrieved_chunks"))
-    has_tables = bool(state.get("table_data"))
-    if not has_chunks and not has_tables:
-        logger.warning(
-            "calculator_node: skipped — no retrieved_chunks or table_data",
-            extra={"event": "node_skipped", "node": "calculator", "run_id": run_id},
-        )
-        _append_state_error(
-            state,
-            "calculator_node: skipped — RetrieverAgent returned no data. "
-            "Calculator cannot run without input data.",
-        )
-        return state
 
     logger.info(
         "calculator_node: start",
@@ -261,11 +275,19 @@ def build_nodes(
     from src.agents.retriever.agent import RetrieverAgent
     from src.agents.calculator.agent import CalculatorAgent
     from src.agents.analysis.agent import AnalysisAgent
+    from src.orchestrator.router import RouterAgent
+    from src.orchestrator.evaluator import EvaluatorAgent
 
+    router_cfg = config.get("router") or {}
     retriever_cfg = config.get("retriever") or {}
     calculator_cfg = config.get("calculator") or {}
     analysis_cfg = config.get("analysis") or {}
+    evaluator_cfg = config.get("evaluator") or {}
 
+    router_agent = RouterAgent(
+        config=router_cfg,
+        llm=llm,
+    )
     retriever_agent = RetrieverAgent(
         config=retriever_cfg,
         llm=llm,
@@ -280,23 +302,26 @@ def build_nodes(
         config=analysis_cfg,
         llm=llm,
     )
+    evaluator_agent = EvaluatorAgent(
+        config=evaluator_cfg,
+        llm=llm,
+    )
 
     logger.info(
         "build_nodes: agents initialized",
         extra={
             "event": "nodes_built",
-            "agents": ["RetrieverAgent", "CalculatorAgent", "AnalysisAgent"],
+            "agents": ["RouterAgent", "RetrieverAgent", "CalculatorAgent", "AnalysisAgent", "EvaluatorAgent"],
             "llm_available": llm is not None,
         },
     )
 
     return {
-        # router_node không cần agent — dùng placeholder logic
-        "router": router_node,
-        # Các node khác bind agent qua closure
+        "router": lambda state: router_node(state, router_agent),
         "retriever": lambda state: retriever_node(state, retriever_agent),
         "calculator": lambda state: calculator_node(state, calculator_agent),
         "analysis": lambda state: analysis_node(state, analysis_agent),
+        "evaluator": lambda state: evaluator_node(state, evaluator_agent),
     }
 
 

@@ -176,14 +176,20 @@ result = {{
         sandbox_res: SandboxResult = self.sandbox.execute(code, context={"data": data})
 
         if not sandbox_res.success:
-            logger.error(f"Calculator sandbox error: {sandbox_res.error}")
-            return {
-                "success": False,
-                "error": sandbox_res.error,
-                "code": code,
-                "metrics": {},
-                "validation": None,
-            }
+            logger.warning(f"Calculator sandbox error ({sandbox_res.error}). Retrying with deterministic Python code fallback...")
+            fallback_code = self._generate_heuristic_code(query, data)
+            sandbox_res = self.sandbox.execute(fallback_code, context={"data": data})
+            if sandbox_res.success:
+                code = fallback_code
+            else:
+                logger.error(f"Calculator sandbox error: {sandbox_res.error}")
+                return {
+                    "success": False,
+                    "error": sandbox_res.error,
+                    "code": code,
+                    "metrics": {},
+                    "validation": None,
+                }
 
         computed_metrics = sandbox_res.result if isinstance(sandbox_res.result, dict) else {"result": sandbox_res.result}
 
@@ -196,6 +202,98 @@ result = {{
             "validation": validation_res.model_dump(),
             "execution_time_ms": sandbox_res.execution_time_ms,
             "code": code,
+        }
+
+    def _build_parsed_financial_data(
+        self, sql_data: Any, metrics: Dict[str, Any], fiscal_years: Optional[List[int]] = None
+    ) -> Dict[str, Any]:
+        """Formats financial data into standardized schema expected by AnalysisAgent."""
+        income_stmt: Dict[int, Dict[str, Any]] = {}
+        balance_sheet: Dict[int, Dict[str, Any]] = {}
+        cash_flow: Dict[int, Dict[str, Any]] = {}
+
+        # 1. Parse from sql_data records if available
+        if isinstance(sql_data, list):
+            for row in sql_data:
+                if not isinstance(row, dict):
+                    continue
+                yr = row.get("fiscal_year")
+                if not yr:
+                    continue
+                try:
+                    yr = int(yr)
+                except (ValueError, TypeError):
+                    continue
+
+                item = str(row.get("line_item", "")).strip()
+                val = float(row.get("value", 0.0) or 0.0)
+                item_lower = item.lower()
+
+                # Income Statement
+                if yr not in income_stmt:
+                    income_stmt[yr] = {}
+                if item == "Doanh số thuần" or ("doanh số" in item_lower and "revenue" not in income_stmt[yr]) or "doanh thu thuần" in item_lower:
+                    income_stmt[yr]["revenue"] = val
+                    income_stmt[yr]["net_revenue"] = val
+                elif item == "Lãi gộp" or "lợi nhuận gộp" in item_lower:
+                    income_stmt[yr]["gross_profit"] = val
+                elif item in ("Lãi/(lỗ) thuần sau thuế", "Lợi nhuận của Cổ đông của Công ty mẹ") or "sau thuế" in item_lower:
+                    income_stmt[yr]["net_income"] = val
+                    income_stmt[yr]["profit_after_tax"] = val
+                elif "lợi nhuận thuần từ hoạt động kinh doanh" in item_lower or item == "Lợi nhuận từ HĐKD" or "ebit" in item_lower:
+                    income_stmt[yr]["ebit"] = val
+                elif "chi phí lãi vay" in item_lower or item == "Chi phí tài chính" or "lãi vay" in item_lower:
+                    income_stmt[yr]["interest_expense"] = val
+                elif "chi phí thuế tndn" in item_lower or "thuế tndn" in item_lower:
+                    income_stmt[yr]["tax_expense"] = val
+
+                # Balance Sheet
+                if yr not in balance_sheet:
+                    balance_sheet[yr] = {}
+                if item == "TỔNG TÀI SẢN" or "tổng tài sản" in item_lower or "tổng cộng tài sản" in item_lower:
+                    balance_sheet[yr]["total_assets"] = val
+                elif item == "VỐN CHỦ SỞ HỮU" or "vốn chủ sở hữu" in item_lower:
+                    balance_sheet[yr]["equity"] = val
+                    balance_sheet[yr]["shareholders_equity"] = val
+                elif item in ("NỢ PHẢI TRẢ", "Tổng nợ phải trả") or "nợ phải trả" in item_lower:
+                    balance_sheet[yr]["total_liabilities"] = val
+                    balance_sheet[yr]["total_debt"] = val
+                elif item in ("Tiền và tương đương tiền", "Tiền và các khoản tương đương tiền") or item_lower.startswith("tiền"):
+                    balance_sheet[yr]["cash"] = val
+
+                # Cash Flow
+                if yr not in cash_flow:
+                    cash_flow[yr] = {}
+                if "hoạt động kinh doanh" in item_lower:
+                    cash_flow[yr]["operating_cash_flow"] = val
+                elif "hoạt động đầu tư" in item_lower:
+                    cash_flow[yr]["investing_cash_flow"] = val
+                elif "hoạt động tài chính" in item_lower:
+                    cash_flow[yr]["financing_cash_flow"] = val
+
+        # 2. Fallback / complement from computed metrics if missing
+        target_years = fiscal_years or [2023]
+        for yr in target_years:
+            if yr not in income_stmt or not income_stmt[yr].get("revenue"):
+                if metrics.get("revenue") or metrics.get("doanh_thu"):
+                    income_stmt.setdefault(yr, {})
+                    income_stmt[yr]["revenue"] = metrics.get("revenue", metrics.get("doanh_thu", 0.0))
+                    income_stmt[yr]["gross_profit"] = metrics.get("gross_profit", metrics.get("loi_nhuan", 0.0))
+                    income_stmt[yr]["net_income"] = metrics.get("net_income", metrics.get("loi_nhuan", 0.0))
+                    income_stmt[yr]["ebit"] = metrics.get("ebit", metrics.get("gross_profit", 0.0))
+                    income_stmt[yr]["tax_expense"] = metrics.get("tax_expense", income_stmt[yr]["net_income"] * 0.2)
+
+            if yr not in balance_sheet or not balance_sheet[yr].get("total_assets"):
+                if metrics.get("total_assets") or metrics.get("equity"):
+                    balance_sheet.setdefault(yr, {})
+                    balance_sheet[yr]["total_assets"] = metrics.get("total_assets", 0.0)
+                    balance_sheet[yr]["equity"] = metrics.get("equity", 0.0)
+                    balance_sheet[yr]["total_liabilities"] = metrics.get("total_liabilities", balance_sheet[yr]["total_assets"] - balance_sheet[yr]["equity"])
+
+        return {
+            "income_statement": income_stmt,
+            "balance_sheet": balance_sheet,
+            "cash_flow": cash_flow,
         }
 
     def invoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -216,9 +314,22 @@ result = {{
 
         # 2. Run computation
         calc_output = self.compute(query=query, ticker=ticker, data=sql_data)
+        metrics = calc_output.get("metrics", {})
 
-        # 3. Update State
-        state["calculator_results"] = calc_output.get("metrics", {})
+        # 3. Structure output according to Multi-Agent State Protocol
+        parsed_fin_data = self._build_parsed_financial_data(
+            sql_data=sql_data,
+            metrics=metrics if isinstance(metrics, dict) else {},
+            fiscal_years=years,
+        )
+
+        results_payload: Dict[str, Any] = {}
+        if isinstance(metrics, dict):
+            results_payload.update(metrics)
+        results_payload["parsed_financial_data"] = parsed_fin_data
+
+        # 4. Update State
+        state["calculator_results"] = results_payload
         state["calculator_raw"] = calc_output
         state["confidence_score"] = 0.95 if calc_output["success"] else 0.4
 

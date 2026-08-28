@@ -142,11 +142,11 @@
 |---|------|----------|-------|--------|
 | 5.1 | LangGraph State Design | Thiết kế TypedDict state cho toàn bộ graph | A | `[ ]` |
 | 5.2 | Graph Definition | Định nghĩa nodes, edges, conditional edges trong LangGraph | A | `[ ]` |
-| 5.3 | Adaptive Strategy Router | Classify query complexity → route tới pipeline phù hợp | B | `[ ]` |
+| 5.3 | Adaptive Strategy Router | Classify query complexity → route tới pipeline phù hợp | B | `[x]` |
 | 5.4 | Simple Query Path | Single RAG pass cho câu hỏi tra cứu đơn giản | A | `[ ]` |
 | 5.5 | Complex Query Path | Full pipeline cho câu hỏi phân tích phức tạp | A | `[ ]` |
-| 5.6 | Evaluator Agent | Kiểm tra tính nhất quán kết quả, trigger retry khi confidence thấp | B | `[ ]` |
-| 5.7 | Retry / Reflection Loop | Logic retry với query reformulation khi retrieve fail | B | `[ ]` |
+| 5.6 | Evaluator Agent | Kiểm tra tính nhất quán kết quả, trigger retry khi confidence thấp | B | `[x]` |
+| 5.7 | Retry / Reflection Loop | Logic retry với query reformulation khi retrieve fail | B | `[x]` |
 | 5.8 | Error Handling | Fallback khi OCR fail, API down, LLM timeout | A+B | `[ ]` |
 | 5.9 | Provenance Tracking | Ghi log nguồn gốc mỗi con số: Agent nào, chunk nào, trang nào | A | `[ ]` |
 | 5.10 | End-to-end Integration Test | Chạy full pipeline từ PDF → Report trên 1 công ty thật | A+B | `[ ]` |

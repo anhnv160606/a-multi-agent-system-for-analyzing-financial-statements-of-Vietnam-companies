@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import random
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -13,9 +14,12 @@ import yaml
 from src.chunking.models import Chunk, EmbeddingRecord
 from src.database.embedding_cache import EmbeddingCache
 from src.database.vector_store import VectorStore
+from src.utils.llm_client import _load_env_file
 from src.utils.logger import get_logger
 
 logger = get_logger("src.chunking.embedding_pipeline")
+
+_load_env_file()
 
 def _load_embedding_config() -> Dict[str, Any]:
     """Load embedding config từ settings.yaml."""
@@ -118,18 +122,18 @@ class EmbeddingPipeline:
                     time.sleep(wait_time)
 
                 # ==================================================
-                # 3. SERVER ERRORS
+                # 3. SERVER ERRORS (5xx, including Cloudflare 520/522/524)
                 # ==================================================
-                elif response.status_code in [500, 502, 503, 504]:
+                elif response.status_code >= 500:
 
                     wait_time = min(
-                        2 ** attempt,
+                        (2 ** attempt) + random.uniform(0.5, 2.0),
                         30
                     )
 
                     logger.warning(
                         f"[JINA] Server error {response.status_code}. "
-                        f"Chờ {wait_time}s... "
+                        f"Chờ {wait_time:.2f}s... "
                         f"(Attempt {attempt + 1}/{max_retries})"
                     )
 
