@@ -56,7 +56,6 @@ data/training/*
 *.db
 *.sqlite
 *.sqlite3
-*.pdf
 *.xlsx
 *.xls
 
