@@ -121,6 +121,12 @@ class FinancialAnalysisState(TypedDict):
     Dùng để debug và provenance.
     """
 
+    market_data: NotRequired[dict[str, Any]]
+    """Dữ liệu giá cổ phiếu và giao dịch thời gian thực từ VNStock API."""
+
+    market_ratios: NotRequired[dict[str, Any]]
+    """Chỉ số định giá thị trường P/E, P/B, EPS từ VNStock API."""
+
     # =========================================================================
     # CALCULATOR OUTPUT — do CalculatorAgent.invoke() ghi
     # =========================================================================

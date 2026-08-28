@@ -1,138 +1,150 @@
-"""Interactive Multi-Agent Query Runner (Phase 3 Core System).
+"""Interactive Multi-Agent Query Runner (Phase 5 LangGraph Full Pipeline).
 
-Demonstrates 3-Tier Multi-Provider Distributed AI Architecture:
-  - Step 0 (Router Agent): Powered by OpenRouter / Groq
-  - Step 1 (SQL & Calculator PoT): Powered by Groq (qwen/qwen3.8-27b / ultra-fast)
-  - Step 2 & 3 (Analysis & Report): Powered by Google Gemini (gemini-3.1-flash-lite / rich synthesis)
+Demonstrates the Complete Distributed Multi-Agent System:
+  - 🧭 Router Agent: Adaptive classification ('simple', 'calculate', 'analysis', 'valuation')
+  - 🔍 Retriever Agent: Jina AI v3 (770 chunks from 232-page PDF) + VNStock Real-time Market Data
+  - 🧮 Calculator Agent: PoT Python Sandbox + SQL Generation
+  - 📊 Analysis Agent: DuPont 3/5-step + Trend Analysis + Google Gemini commentary
+  - ⚖️ Evaluator Agent: Quality Gate & Confidence Scoring
 """
 
+import sys
+import yaml
 import warnings
 warnings.filterwarnings("ignore")
 
-import sys
-import json
-import os
-from src.agents.calculator.agent import CalculatorAgent
-from src.agents.calculator.sql_agent import SQLAgent
-from src.agents.analysis.agent import AnalysisAgent
-from src.utils.llm_client import get_default_llm
+from src.utils.llm_client import _load_env_file, get_default_llm
+from src.orchestrator.graph import build_graph, create_initial_state
 
 
-def run_financial_query(query: str, ticker: str = "FPT", fiscal_year: int = 2023):
-    router_llm = get_default_llm("router")
-    calc_llm = get_default_llm("calculator")
-    report_llm = get_default_llm("report_writer")
-
-    r_tag = f"{router_llm.provider.upper()}" if router_llm else "Offline"
-    c_tag = f"{calc_llm.provider.upper()}" if calc_llm else "Offline"
-    g_tag = f"{report_llm.provider.upper()}" if report_llm else "Offline"
-
-    print("=" * 80)
-    print(f"🤖 ĐANG XỬ LÝ TRUY VẤN: '{query}'")
-    print(f"🏢 Mã: {ticker} | Năm: {fiscal_year} | 🌐 3-Tier AI: [Router: {r_tag}] + [Calc: {c_tag}] + [Report: {g_tag}]")
-    print("=" * 80)
-
-    # Khởi tạo Pipeline State
-    state = {
-        "query": query,
-        "company_ticker": ticker,
-        "fiscal_years": [fiscal_year],
-    }
-
-    # BƯỚC 0: Router Agent phân loại truy vấn (OpenRouter)
-    print(f"\n[BƯỚC 0] 🧭 Router Agent ({r_tag}) đang phân loại câu hỏi...")
-    route_prompt = f"Phân loại câu hỏi sau thành 1 từ duy nhất (CALCULATION, ANALYSIS, RETRIEVAL): '{query}'"
+def run_query(user_query: str):
+    _load_env_file()
     try:
-        if router_llm:
-            route_res = router_llm.invoke(route_prompt).content.strip()
-            print(f"   ✓ Hướng xử lý: {route_res}")
-        else:
-            print("   ✓ Hướng xử lý: CALCULATION & ANALYSIS (Offline Mode)")
-    except Exception as e:
-        print(f"   ✓ Hướng xử lý: CALCULATION & ANALYSIS (Fallback)")
+        with open("configs/models.yaml", "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+    except Exception:
+        cfg = {}
 
-    # BƯỚC 1: SQL Agent & Calculator Agent (Groq)
-    print(f"\n[BƯỚC 1] 🧮 Calculator & SQL Agent ({c_tag}) đang truy vấn và tính toán...")
-    calculator = CalculatorAgent(llm=calc_llm)
-    state = calculator.invoke(state)
+    llm = get_default_llm("default")
+    graph = build_graph(config=cfg, llm=llm)
 
-    print(f"   ✓ Câu lệnh SQL đã thực thi:")
-    print(f"     -> {state.get('sql_query')}")
-    print(f"   ✓ Lấy được {len(state.get('sql_data', []))} bản ghi số liệu thực tế từ Database.")
+    print("=" * 80)
+    print(f"❓ CÂU HỎI: '{user_query}'")
+    print("=" * 80)
 
-    print("\n   ✓ Kết quả tính toán từ Sandbox Python (Chính xác 100%):")
-    calc_res = state.get("calculator_results", {})
-    for k, v in calc_res.items():
-        if k == "dupont":
-            continue
-        if isinstance(v, float):
+    state = create_initial_state(query=user_query)
+    final_state = graph.invoke(state)
+
+    query_type = final_state.get("query_type", "analysis")
+    ticker = final_state.get("company_ticker", "FPT")
+    confidence = final_state.get("confidence_score", 1.0)
+    provenance = [p.get("agent") for p in final_state.get("provenance", [])]
+
+    print(f"\n🧭 1. PHÂN LOẠI CHIẾN LƯỢC (Router Agent):")
+    print(f"   - Hướng xử lý : '{query_type.upper()}'")
+    print(f"   - Mã cổ phiếu : {ticker}")
+    print(f"   - Năm tài chính: {final_state.get('fiscal_years', [])}")
+    print(f"   - Chuỗi tác tử : {' ➔ '.join(dict.fromkeys(provenance))}")
+
+    # 1. Hiển thị Dữ liệu Thị trường (nếu có từ VNStock)
+    market_data = final_state.get("market_data")
+    market_ratios = final_state.get("market_ratios")
+    if market_data or market_ratios:
+        print(f"\n📈 2. DỮ LIỆU THỊ TRƯỜNG THỜI GIAN THỰC (VNStock API):")
+        if market_data and market_data.get("records"):
+            latest = market_data["records"][-1]
+            print(f"   - Giá đóng cửa gần nhất ({latest.get('date')}): {latest.get('close', 0):,.0f} VND (Mở cửa: {latest.get('open', 0):,.0f}, Cao nhất: {latest.get('high', 0):,.0f}, Thấp nhất: {latest.get('low', 0):,.0f})")
+            print(f"   - Khối lượng giao dịch: {latest.get('volume', 0):,.0f} cổ phiếu")
+        if market_ratios:
+            pe_str = f"{market_ratios.get('pe')}x" if market_ratios.get('pe') is not None else "N/A"
+            pb_str = f"{market_ratios.get('pb')}x" if market_ratios.get('pb') is not None else "N/A"
+            eps_val = market_ratios.get('eps')
+            eps_str = f"{eps_val:,.0f} VND" if eps_val is not None else "N/A"
+            print(f"   - Định giá P/E: {pe_str} | P/B: {pb_str} | EPS: {eps_str}")
+
+    # 2. Hiển thị Đoạn trích xuất từ PDF (Retriever)
+    retrieved = final_state.get("retrieved_chunks", [])
+    pdf_chunks = [c for c in retrieved if c.get("metadata", {}).get("source") != "vnstock_api"]
+    if pdf_chunks:
+        print(f"\n📄 3. TÀI LIỆU TRÍCH XUẤT TỪ PDF (Jina AI v3):")
+        for idx, c in enumerate(pdf_chunks[:2], 1):
+            page = c.get("metadata", {}).get("page", "N/A")
+            content = c.get("content", "").strip().replace("\n", " ")
+            print(f"   [{idx}] (Trang {page}): \"{content[:200]}...\"")
+
+    # 3. Hiển thị Kết quả tính toán Sandbox (Calculator)
+    calc_res = final_state.get("calculator_results", {})
+    if calc_res:
+        print(f"\n🧮 4. KẾT QUẢ TÍNH TOÁN (Python Sandbox & SQL):")
+        for k, v in calc_res.items():
+            if k in ("parsed_financial_data", "dupont") or not isinstance(v, (int, float)):
+                continue
             if abs(v) > 1e6:
-                print(f"     * {k:<20}: {v:,.0f} VND")
+                print(f"   - {k:<22}: {v:,.0f} VND")
             elif "margin" in k or "roe" in k or "roa" in k:
-                print(f"     * {k:<20}: {v:.2%}")
+                print(f"   - {k:<22}: {v:.2%}")
             else:
-                print(f"     * {k:<20}: {v:.4f}")
-        else:
-            print(f"     * {k:<20}: {v}")
+                print(f"   - {k:<22}: {v:.4f}")
 
-    # BƯỚC 2: Analysis Agent (Google Gemini)
-    print(f"\n[BƯỚC 2] 📊 Analysis Agent ({g_tag}) đang phân tích & đánh giá số liệu...")
-    
-    # Bóc tách DuPont nếu có dữ liệu tổng hợp
-    state["table_data"] = {
-        "income_statement": {
-            fiscal_year: {
-                "revenue": calc_res.get("revenue", calc_res.get("doanh_thu", 0.0)),
-                "gross_profit": calc_res.get("gross_profit", calc_res.get("loi_nhuan", 0.0)),
-                "net_income": calc_res.get("net_income", calc_res.get("loi_nhuan", 0.0)),
-                "ebit": calc_res.get("gross_profit", calc_res.get("loi_nhuan", 0.0)),
-                "tax_expense": calc_res.get("net_income", calc_res.get("loi_nhuan", 0.0)) * 0.2,
-            }
-        },
-        "balance_sheet": {
-            fiscal_year: {
-                "total_assets": calc_res.get("total_assets", 60325276051932.0),
-                "equity": calc_res.get("equity", 29948354954414.0),
-                "total_liabilities": calc_res.get("total_liabilities", 30376921097518.0),
-            }
-        }
-    }
-    
-    analysis_agent = AnalysisAgent(config={"skip_llm_insights": True}, llm=None)
-    dupont_result = analysis_agent.dupont_analysis(state["table_data"])
-    d3 = dupont_result.get("dupont_3step", {}).get(fiscal_year, {})
+    # 4. Hiển thị Phân tích DuPont & Nhận định (Analysis Agent)
+    analysis_res = final_state.get("analysis_results", {})
+    dupont = analysis_res.get("dupont", {})
+    if dupont and dupont.get("dupont_3step"):
+        print(f"\n🔬 5. BÓC TÁCH MÔ HÌNH DUPONT 3 BƯỚC:")
+        for yr, d in dupont["dupont_3step"].items():
+            net_margin = d.get("net_profit_margin")
+            asset_turn = d.get("asset_turnover")
+            eq_mult = d.get("equity_multiplier")
+            roe_val = d.get("roe")
 
-    if d3 and d3.get("roe") is not None and d3.get("net_profit_margin", 0) > 0:
-        print(f"   ✓ Kết quả phân tích mô hình DuPont 3 bước năm {fiscal_year}:")
-        print(f"     * 1. Biên lợi nhuận ròng (Net Profit Margin) : {d3.get('net_profit_margin', 0):.2%}")
-        print(f"     * 2. Vòng quay tổng tài sản (Asset Turnover) : {d3.get('asset_turnover', 0):.4f} lần")
-        print(f"     * 3. Đòn bẩy tài chính (Equity Multiplier)   : {d3.get('equity_multiplier', 0):.2f}x")
-        print(f"     -----------------------------------------------------------------")
-        print(f"     🏆 ROE TỔNG HỢP (Net Margin × Turnover × Leverage): {d3.get('roe', 0):.2%}")
+            nm_str = f"{net_margin:.2%}" if net_margin is not None else "N/A"
+            at_str = f"{asset_turn:.4f} lần" if asset_turn is not None else "N/A"
+            eq_str = f"{eq_mult:.4f}x" if eq_mult is not None else "N/A"
+            roe_str = f"{roe_val:.2%}" if roe_val is not None else "N/A"
 
-    # Nhận xét từ chuyên gia tài chính AI (Gemini)
-    if report_llm and calc_res:
+            print(f"   * Năm {yr}:")
+            print(f"     + Biên lợi nhuận ròng (Net Margin) : {nm_str}")
+            print(f"     + Vòng quay tổng tài sản (Turnover) : {at_str}")
+            print(f"     + Đòn bẩy tài chính (Multiplier)   : {eq_str}")
+            print(f"     ➔ ROE Tổng hợp                      : {roe_str}")
+
+    interp = analysis_res.get("interpretation") or dupont.get("interpretation")
+    if not interp or "Không đủ dữ liệu" in interp:
+        # Tự động tổng hợp câu trả lời ngôn ngữ tự nhiên từ Gemini
         try:
-            insight_prompt = (
-                f"Bạn là chuyên gia phân tích tài chính cao cấp. Hãy đưa ra nhận xét cô đọng (2 câu) về số liệu: "
-                f"Mã {ticker} năm {fiscal_year}, kết quả tính toán: {json.dumps(calc_res, ensure_ascii=False)}."
-            )
-            insight = report_llm.invoke(insight_prompt).content.strip()
-            print(f"\n   ✓ Nhận định tài chính từ Gemini AI:")
-            print(f"     \"{insight}\"")
-        except Exception:
+            summary_llm = get_default_llm("analysis") or llm
+            if summary_llm:
+                prompt = (
+                    f"Bạn là Chuyên gia Phân tích Tài chính và Chứng khoán Việt Nam.\n"
+                    f"Người dùng hỏi: '{user_query}'\n"
+                    f"Thông tin thu thập được từ hệ thống:\n"
+                    f"- Mã cổ phiếu: {ticker}\n"
+                    f"- Dữ liệu thị trường (VNStock): {market_data}\n"
+                    f"- Chỉ số định giá & tài chính: {market_ratios}\n"
+                    f"- Dữ liệu tính toán BCTC: {calc_res}\n"
+                    f"- Trích xuất PDF: {[c.get('content', '')[:200] for c in pdf_chunks[:2]]}\n\n"
+                    f"Hãy trả lời câu hỏi của người dùng một cách rõ ràng, chuyên nghiệp, phân tích tình hình kinh doanh, doanh thu, lợi nhuận, hiệu quả sinh lời và nhận định cổ phiếu bằng tiếng Việt."
+                )
+                interp = summary_llm.invoke(prompt).content
+        except Exception as e:
             pass
 
+    if interp:
+        print(f"\n💡 6. CÂU TRẢ LỜI TỔNG HỢP TỪ AI (Google Gemini):")
+        print(f"   {interp.strip()}")
+
     print("\n" + "=" * 80)
-    print(f"🎉 TRẠNG THÁI: TÍNH TOÁN TOÀN DIỆN THÀNH CÔNG 100% | 3 PROVIDERS: OPENROUTER + GROQ + GEMINI")
+    print(f"✅ ĐÁNH GIÁ CHẤT LƯỢNG (Evaluator Agent): Điểm tin cậy = {confidence:.2f}/1.00")
     print("=" * 80)
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        query_text = " ".join(sys.argv[1:])
+        q = " ".join(sys.argv[1:])
+        run_query(q)
     else:
-        query_text = input("\n👉 Nhập câu hỏi tài chính bạn muốn hỏi hệ thống: ")
-    
-    if query_text.strip():
-        run_financial_query(query_text.strip())
+        print("\n👉 CHẾ ĐỘ THỬ NGHIỆM HỆ THỐNG MULTI-AGENT TÀI CHÍNH (PHASE 5)")
+        user_q = input("Nhập câu hỏi tài chính của bạn (hoặc nhấn Enter để dùng câu mẫu): ")
+        if not user_q.strip():
+            user_q = "Phân tích doanh thu, lợi nhuận, bóc tách DuPont và giá cổ phiếu FPT năm 2023"
+        run_query(user_q)

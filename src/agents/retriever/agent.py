@@ -12,9 +12,11 @@ from src.agents.retriever.hybrid_search import HybridSearch, HybridSearchHit
 from src.agents.retriever.reranker import RetrieverReranker
 from src.database.mysql_loader import MySQLLoader
 from src.database.vector_store import VectorStore
+from src.ingestion.vnstock_client import VNStockClient
+
 
 class RetrieverAgent(BaseAgent):
-	"""Retrieves relevant chunks from vector store and table data from SQL layer."""
+	"""Retrieves relevant chunks from vector store, table data from SQL layer, and live market data from VNStock."""
 
 	def __init__(
 		self,
@@ -25,11 +27,13 @@ class RetrieverAgent(BaseAgent):
 		mysql_loader: MySQLLoader | None = None,
 		hybrid_search: HybridSearch | None = None,
 		reranker: RetrieverReranker | None = None,
+		vnstock_client: VNStockClient | None = None,
 	) -> None:
 		super().__init__(config=config, llm=llm, prompt_template=prompt_template)
 
 		self._vector_store = vector_store
 		self._mysql_loader = mysql_loader
+		self.vnstock_client = vnstock_client or VNStockClient()
 		self.hybrid_search = hybrid_search or HybridSearch(
 			vector_store=self._get_vector_store(),
 			alpha=float(self.config.get("hybrid_alpha", 0.7)),
@@ -105,6 +109,57 @@ class RetrieverAgent(BaseAgent):
 			}
 			for hit in reranked_hits
 		]
+
+		# Fetch real-time market data & company ratios from VNStock
+		ticker = str(state.get("company_ticker") or filters.get("ticker") or "FPT").strip().upper()
+		if ticker:
+			try:
+				stock_history = self.vnstock_client.get_stock_price(ticker, limit_days=5)
+				ratios = self.vnstock_client.get_financial_ratios(ticker)
+				news = self.vnstock_client.get_company_news(ticker, limit=2)
+				overview = self.vnstock_client.get_company_info(ticker)
+
+				state["market_data"] = stock_history.model_dump()
+				state["market_ratios"] = ratios.model_dump()
+
+				market_text_parts = [f"[DỮ LIỆU THỊ TRƯỜNG THỜI GIAN THỰC TỪ VNSTOCK - MÃ {ticker}]"]
+				if stock_history.records:
+					latest = stock_history.records[-1]
+					market_text_parts.append(
+						f"- Giá giao dịch gần nhất (ngày {latest.date}): {latest.close:,.0f} VND "
+						f"(Mở cửa: {latest.open:,.0f}, Cao nhất: {latest.high:,.0f}, Thấp nhất: {latest.low:,.0f}).\n"
+						f"- Khối lượng giao dịch: {latest.volume:,.0f} cổ phiếu."
+					)
+				if ratios.pe or ratios.pb:
+					market_text_parts.append(
+						f"- Chỉ số định giá thị trường: P/E = {ratios.pe}x, P/B = {ratios.pb}x, EPS = {ratios.eps:,.0f} VND.\n"
+						f"- Doanh thu thị trường: {ratios.revenue:,.0f} VND, Lợi nhuận sau thuế: {ratios.net_profit:,.0f} VND."
+					)
+				if news:
+					market_text_parts.append("- Tin tức mới nhất:")
+					for item in news:
+						market_text_parts.append(f"  + [{item.publish_date}] {item.title}")
+
+				market_content = "\n".join(market_text_parts)
+				retrieved_chunks.insert(0, {
+					"chunk_id": f"vnstock_market_{ticker}",
+					"content": market_content,
+					"metadata": {"ticker": ticker, "source": "vnstock_api", "type": "market_realtime"},
+					"vector_score": 1.0,
+					"keyword_score": 1.0,
+					"hybrid_score": 1.0,
+					"rerank_score": 1.0,
+					"rerank_reason": "Live market data from VNStock API",
+				})
+				provenance_items.append({
+					"agent": "VNStockClient",
+					"ticker": ticker,
+					"source": "VNDirect / VNStock Market API",
+					"records_count": len(stock_history.records),
+				})
+				confidence = max(confidence, 0.85)
+			except Exception as e:
+				pass
 
 		state["retrieved_chunks"] = retrieved_chunks
 		state["table_data"] = table_data

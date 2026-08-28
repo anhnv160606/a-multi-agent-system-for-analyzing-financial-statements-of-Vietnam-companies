@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import requests
 import yaml
 
 from src.database.models import VectorDocumentRecord, VectorSearchResult
@@ -102,6 +103,40 @@ class VectorStore:
             )
             self.use_fallback = False
             logger.info(f"Vector Store collection '{self.collection_name}' ready ({self.distance_metric}).")
+
+            # Auto-sync existing JSON vector chunks if ChromaDB is freshly created
+            if self.collection.count() == 0:
+                for src_file in [
+                    self.persist_directory / "fpt_full_pdf_kb_store.json",
+                    self.persist_directory / "document_knowledge_base_store.json",
+                ]:
+                    if src_file.exists():
+                        try:
+                            with open(src_file, "r", encoding="utf-8") as f:
+                                stored_data = json.load(f)
+                            if stored_data:
+                                docs, metas, ids, embeds = [], [], [], []
+                                for d_id, item in stored_data.items():
+                                    ids.append(d_id)
+                                    docs.append(item.get("content", ""))
+                                    clean_m = {k: v for k, v in item.get("metadata", {}).items() if isinstance(v, (str, int, float, bool))}
+                                    metas.append(clean_m)
+                                    if "embedding" in item and item["embedding"]:
+                                        embeds.append(item["embedding"])
+                                batch_size = 200
+                                for i in range(0, len(docs), batch_size):
+                                    b_docs = docs[i : i + batch_size]
+                                    b_metas = metas[i : i + batch_size]
+                                    b_ids = ids[i : i + batch_size]
+                                    b_embeds = embeds[i : i + batch_size] if len(embeds) == len(docs) else None
+                                    if b_embeds:
+                                        self.collection.add(documents=b_docs, metadatas=b_metas, ids=b_ids, embeddings=b_embeds)
+                                    else:
+                                        self.collection.add(documents=b_docs, metadatas=b_metas, ids=b_ids)
+                                logger.info(f"Auto-synchronized {len(docs)} chunks from {src_file.name} into ChromaDB collection.")
+                                break
+                        except Exception as err:
+                            logger.warning(f"Could not auto-sync to ChromaDB from {src_file.name}: {err}")
 
         except ImportError:
             logger.warning(
@@ -199,6 +234,29 @@ class VectorStore:
         logger.info(f"Indexed {total} documents into ChromaDB collection '{self.collection_name}'.")
         return ids
 
+    def _embed_query(self, text: str) -> List[float]:
+        """Generates 1024-dim query embedding using Jina AI API if token is present."""
+        try:
+            from src.utils.llm_client import _load_env_file
+            _load_env_file()
+        except Exception:
+            pass
+
+        jina_token = os.getenv("JINA_TOKEN")
+        if jina_token:
+            try:
+                resp = requests.post(
+                    "https://api.jina.ai/v1/embeddings",
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {jina_token}"},
+                    json={"model": "jina-embeddings-v3", "task": "retrieval.query", "input": [text]},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    return resp.json()["data"][0]["embedding"]
+            except Exception as e:
+                logger.debug(f"Jina query embedding error: {e}")
+        return self._dummy_embed(text)
+
     def query(
         self,
         query_text: str,
@@ -212,21 +270,8 @@ class VectorStore:
         if not query_text:
             return []
 
-        if self.use_fallback:
-            query_emb = self._dummy_embed(query_text)
-            return self.query_by_embedding(query_emb, n_results=n_results, where=where)
-
-        kwargs = {
-            "query_texts": [query_text],
-            "n_results": n_results,
-        }
-        if where:
-            kwargs["where"] = where
-        if where_document:
-            kwargs["where_document"] = where_document
-
-        results = self.collection.query(**kwargs)
-        return self._format_results(results)
+        query_emb = self._embed_query(query_text)
+        return self.query_by_embedding(query_emb, n_results=n_results, where=where)
 
     def query_by_embedding(
         self,
@@ -241,7 +286,6 @@ class VectorStore:
             scored: List[Tuple[float, str, Dict[str, Any]]] = []
             for doc_id, data in self._fallback_docs.items():
                 meta = data.get("metadata", {})
-                # Apply where filter
                 if where:
                     match = all(meta.get(k) == v for k, v in where.items())
                     if not match:
@@ -249,24 +293,20 @@ class VectorStore:
 
                 doc_emb = data.get("embedding")
                 sim = self._cosine_similarity(embedding, doc_emb) if doc_emb else 0.5
-                dist = max(0.0, 1.0 - sim)
-                scored.append((dist, doc_id, data))
+                scored.append((sim, data.get("document", ""), meta, doc_id))
 
-            scored.sort(key=lambda x: x[0])
-            top_k = scored[:n_results]
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top_results = scored[:n_results]
 
-            results = []
-            for dist, doc_id, data in top_k:
-                results.append(
-                    VectorSearchResult(
-                        id=doc_id,
-                        document=data.get("document", ""),
-                        metadata=data.get("metadata", {}),
-                        distance=dist,
-                        similarity=max(0.0, 1.0 - dist),
-                    )
+            return [
+                VectorSearchResult(
+                    id=item[3],
+                    document=item[1],
+                    metadata=item[2],
+                    score=round(item[0], 4),
                 )
-            return results
+                for item in top_results
+            ]
 
         kwargs = {
             "query_embeddings": [embedding],

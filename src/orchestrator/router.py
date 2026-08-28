@@ -176,14 +176,18 @@ class RouterAgent(BaseAgent):
         extracted_ticker = ticker or self._extract_ticker_regex(query) or "FPT"
         extracted_years = fiscal_years or self._extract_years_regex(query) or [2023]
 
-        # 1. Valuation & Định giá
-        valuation_keywords = ["định giá", "valuation", "p/e", "p/b", "ev/ebitda", "dcf", "chiết khấu dòng tiền", "giá trị nội tại"]
+        # 1. Valuation, Stock Price & Market Data (Định giá & Giá cổ phiếu thị trường)
+        valuation_keywords = [
+            "định giá", "valuation", "p/e", "p/b", "ev/ebitda", "dcf", "chiết khấu dòng tiền",
+            "giá trị nội tại", "giá cổ phiếu", "thị giá", "khối lượng giao dịch", "thanh khoản",
+            "thị trường", "phiên giao dịch", "cổ phiếu"
+        ]
         if any(kw in q_lower for kw in valuation_keywords):
             return {
                 "query_type": "valuation",
                 "ticker": extracted_ticker,
                 "fiscal_years": extracted_years,
-                "confidence": 0.92,
+                "confidence": 0.95,
             }
 
         # 2. Comprehensive Analysis (DuPont, Trend, Common-size, Sức khỏe)
@@ -223,7 +227,38 @@ class RouterAgent(BaseAgent):
         }
 
     def _extract_ticker_regex(self, text: str) -> Optional[str]:
-        """Trích xuất mã chứng khoán viết hoa trong câu hỏi."""
+        """Trích xuất mã chứng khoán từ tên công ty tiếng Việt hoặc mã viết hoa."""
+        # 1. Tra cứu tên thương hiệu tiếng Việt phổ biến
+        name_map = {
+            "hòa phát": "HPG", "hoa phat": "HPG",
+            "vinamilk": "VNM", "sữa việt nam": "VNM",
+            "fpt": "FPT",
+            "masan": "MSN", "ma san": "MSN",
+            "vingroup": "VIC", "vin group": "VIC",
+            "vinhomes": "VHM",
+            "vincom": "VRE",
+            "thế giới di động": "MWG", "the gioi di dong": "MWG", "bách hóa xanh": "MWG",
+            "viettel": "CTR", "viettel post": "VTP",
+            "techcombank": "TCB", "techcom": "TCB",
+            "vietcombank": "VCB", "vietcom": "VCB",
+            "vietinbank": "CTG", "vietin": "CTG",
+            "bidv": "BID",
+            "vpbank": "VPB", "vp bank": "VPB", "việt nam thịnh vượng": "VPB",
+            "mbbank": "MBB", "mb bank": "MBB", "quân đội": "MBB",
+            "acb": "ACB", "á châu": "ACB",
+            "hdbank": "HDB", "hd bank": "HDB",
+            "sacombank": "STB",
+            "tpbank": "TPB", "tp bank": "TPB", "tiên phong": "TPB",
+            "sabeco": "SAB", "bia sài gòn": "SAB",
+            "gas": "GAS", "khí việt nam": "GAS",
+            "petrolimex": "PLX",
+        }
+        text_lower = text.lower()
+        for name, tk in name_map.items():
+            if name in text_lower:
+                return tk
+
+        # 2. Tìm mã viết hoa trong câu hỏi
         words = re.findall(r"\b[A-Z]{3,4}\b", text)
         for w in words:
             if w in _COMMON_TICKERS:

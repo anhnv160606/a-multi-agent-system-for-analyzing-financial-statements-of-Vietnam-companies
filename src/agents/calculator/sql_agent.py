@@ -90,14 +90,16 @@ class SQLAgent(BaseAgent):
         return text.strip()
 
     def format_prompt(self, query: str, ticker: str, years: Any, quarter: Any) -> str:
-        """Renders the user prompt from the loaded YAML template."""
-        user_tmpl = self.prompt_template.get("user_template", "")
-        return user_tmpl.format(
+        """Renders the full prompt with schema instructions from the loaded YAML template."""
+        sys_prompt = self.prompt_template.get("system_prompt", "") if isinstance(self.prompt_template, dict) else ""
+        user_tmpl = self.prompt_template.get("user_template", "") if isinstance(self.prompt_template, dict) else str(self.prompt_template)
+        user_prompt = user_tmpl.format(
             query=query,
             ticker=ticker,
             years=years,
             quarter=quarter,
         )
+        return f"{sys_prompt}\n\n{user_prompt}" if sys_prompt else user_prompt
 
     @track_tokens
     def generate_sql(

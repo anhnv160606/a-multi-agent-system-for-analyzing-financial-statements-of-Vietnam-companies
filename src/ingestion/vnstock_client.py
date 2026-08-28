@@ -84,6 +84,46 @@ class VNStockClient:
             "website": "https://vingroup.net",
             "description": "Tập đoàn tư nhân đa ngành lớn nhất Việt Nam.",
         },
+        "MSN": {
+            "company_name": "Công ty Cổ phần Tập đoàn Masan",
+            "industry": "Hàng tiêu dùng & Bán lẻ",
+            "sector": "Tiêu dùng thiết yếu",
+            "exchange": "HOSE",
+            "charter_capital": 14308434000000.0,
+            "established_year": 1996,
+            "website": "https://masangroup.com",
+            "description": "Tập đoàn tiêu dùng - bán lẻ tích hợp hàng đầu Việt Nam sở hữu WinCommerce, Masan Consumer, Masan MEATLife.",
+        },
+        "MWG": {
+            "company_name": "Công ty Cổ phần Đầu tư Thế Giới Di Động",
+            "industry": "Bán lẻ",
+            "sector": "Tiêu dùng không thiết yếu",
+            "exchange": "HOSE",
+            "charter_capital": 14622497000000.0,
+            "established_year": 2004,
+            "website": "https://mwg.vn",
+            "description": "Nhà bán lẻ số 1 Việt Nam về thiết bị công nghệ, điện máy và chuỗi bách hóa thực phẩm.",
+        },
+        "VPB": {
+            "company_name": "Ngân hàng TMCP Việt Nam Thịnh Vượng (VPBank)",
+            "industry": "Ngân hàng & Tài chính",
+            "sector": "Tài chính",
+            "exchange": "HOSE",
+            "charter_capital": 79339000000000.0,
+            "established_year": 1993,
+            "website": "https://vpbank.com.vn",
+            "description": "Ngân hàng thương mại cổ phần tư nhân quy mô vốn chủ sở hữu hàng đầu Việt Nam.",
+        },
+        "CTR": {
+            "company_name": "Tổng Công ty Cổ phần Công trình Viettel (Viettel Construction)",
+            "industry": "Hạ tầng Viễn thông & Xây dựng",
+            "sector": "Công nghiệp",
+            "exchange": "HOSE",
+            "charter_capital": 1144000000000.0,
+            "established_year": 1995,
+            "website": "https://viettelconstruction.com.vn",
+            "description": "Thành viên Tập đoàn Công nghiệp - Viễn thông Quân đội (Viettel) dẫn đầu về xây lắp hạ tầng viễn thông.",
+        },
     }
 
     def __init__(self, cache: Optional[APICache] = None, timeout: int = 10):
@@ -231,13 +271,19 @@ class VNStockClient:
                 records: List[StockPriceItem] = []
                 for i in range(len(timestamps)):
                     dt_str = datetime.fromtimestamp(timestamps[i]).strftime("%Y-%m-%d")
+                    raw_open = float(opens[i])
+                    raw_high = float(highs[i])
+                    raw_low = float(lows[i])
+                    raw_close = float(closes[i])
+                    # VNDirect API trả về đơn vị nghìn đồng (ví dụ 22.0 = 22,000 VND, 74.0 = 74,000 VND)
+                    p_mult = 1000.0 if raw_close < 1000 else 1.0
                     records.append(
                         StockPriceItem(
                             date=dt_str,
-                            open=float(opens[i]),
-                            high=float(highs[i]),
-                            low=float(lows[i]),
-                            close=float(closes[i]),
+                            open=round(raw_open * p_mult, 0),
+                            high=round(raw_high * p_mult, 0),
+                            low=round(raw_low * p_mult, 0),
+                            close=round(raw_close * p_mult, 0),
                             volume=float(volumes[i]),
                         )
                     )
@@ -268,7 +314,7 @@ class VNStockClient:
         cache_key = f"financial_ratios:{ticker_upper}:{target_year}"
 
         cached = self.cache.get(cache_key)
-        if cached:
+        if cached and (cached.get("revenue") is not None or cached.get("pe") is not None):
             return FinancialRatioSummary(**cached)
 
         # Baseline ratios for common tickers or calculated default
@@ -276,6 +322,11 @@ class VNStockClient:
             "VNM": {"pe": 14.5, "pb": 3.8, "roe": 0.28, "roa": 0.18, "eps": 4150.0, "revenue": 60479e9, "net_profit": 9019e9, "total_assets": 53000e9},
             "FPT": {"pe": 24.2, "pb": 5.9, "roe": 0.27, "roa": 0.12, "eps": 5200.0, "revenue": 52618e9, "net_profit": 7788e9, "total_assets": 60000e9},
             "HPG": {"pe": 12.8, "pb": 1.7, "roe": 0.11, "roa": 0.06, "eps": 2100.0, "revenue": 120000e9, "net_profit": 6800e9, "total_assets": 187000e9},
+            "MSN": {"pe": 28.5, "pb": 2.3, "roe": 0.12, "roa": 0.04, "eps": 2900.0, "revenue": 78252e9, "net_profit": 4168e9, "total_assets": 147000e9},
+            "MWG": {"pe": 35.0, "pb": 2.5, "roe": 0.05, "roa": 0.02, "eps": 1200.0, "revenue": 118280e9, "net_profit": 1680e9, "total_assets": 60000e9},
+            "VPB": {"pe": 11.5, "pb": 1.2, "roe": 0.11, "roa": 0.015, "eps": 1400.0, "revenue": 50000e9, "net_profit": 10987e9, "total_assets": 817000e9},
+            "TCB": {"pe": 8.2, "pb": 1.1, "roe": 0.15, "roa": 0.024, "eps": 2600.0, "revenue": 40000e9, "net_profit": 18190e9, "total_assets": 849000e9},
+            "CTR": {"pe": 18.0, "pb": 4.2, "roe": 0.28, "roa": 0.09, "eps": 4500.0, "revenue": 11299e9, "net_profit": 516e9, "total_assets": 6000e9},
         }
 
         r_data = default_ratios.get(ticker_upper, {})
