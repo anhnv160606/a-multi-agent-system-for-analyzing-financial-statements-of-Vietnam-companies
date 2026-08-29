@@ -279,7 +279,28 @@ class VectorStore:
             if batch_embs is not None:
                 kwargs["embeddings"] = batch_embs
 
-            self.collection.upsert(**kwargs)
+            try:
+                self.collection.upsert(**kwargs)
+            except Exception as upsert_err:
+                err_str = str(upsert_err).lower()
+                if "dimension" in err_str or "invalidargument" in err_str:
+                    logger.warning(
+                        f"Dimension mismatch during upsert into '{self.collection_name}': {upsert_err}. "
+                        f"Auto-recreating collection to match current embedding model dimension..."
+                    )
+                    try:
+                        self.client.delete_collection(name=self.collection_name)
+                    except Exception:
+                        pass
+                    metadata_cfg = {"hnsw:space": self.distance_metric}
+                    self.collection = self.client.get_or_create_collection(
+                        name=self.collection_name,
+                        metadata=metadata_cfg,
+                        embedding_function=self.embedding_function,
+                    )
+                    self.collection.upsert(**kwargs)
+                else:
+                    raise upsert_err
 
         logger.info(f"Indexed {total} documents into ChromaDB collection '{self.collection_name}'.")
         return ids
@@ -378,8 +399,18 @@ class VectorStore:
         if where:
             kwargs["where"] = where
 
-        results = self.collection.query(**kwargs)
-        return self._format_results(results)
+        try:
+            results = self.collection.query(**kwargs)
+            return self._format_results(results)
+        except Exception as q_err:
+            err_str = str(q_err).lower()
+            if "dimension" in err_str or "invalidargument" in err_str:
+                logger.warning(
+                    f"Vector search dimension mismatch on collection '{self.collection_name}': {q_err}. "
+                    f"Returning empty results safely."
+                )
+                return []
+            raise q_err
 
     def delete(
         self,

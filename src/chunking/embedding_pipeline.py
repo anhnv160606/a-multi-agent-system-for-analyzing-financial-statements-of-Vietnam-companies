@@ -62,169 +62,77 @@ class EmbeddingPipeline:
             f"EmbeddingPipeline (API Mode): model={self.model_name}, "
         )
 
-    def _call_jina_api(self, texts: List[str], max_retries: int = 5) -> List[List[float]]:
+    def _call_jina_api(self, texts: List[str], max_retries: int = 8, batch_size: int = 32) -> List[List[float]]:
         headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.jina_token}",
-                    }
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.jina_token}",
+        }
 
-        payload = {
-                    "model": self.model_name,
-                    "input": texts
-                    }             
+        all_embeddings: List[List[float]] = []
 
-        for attempt in range(max_retries):
+        for b_idx in range(0, len(texts), batch_size):
+            batch_texts = texts[b_idx:b_idx + batch_size]
+            payload = {
+                "model": self.model_name,
+                "input": batch_texts,
+            }
 
-            try:
-                response = requests.post(
-                    self.api_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=60
-                )
-
-                if response.status_code == 200:
-
-                    result = response.json()
-
-                    embeddings = [
-                        item["embedding"]
-                        for item in result["data"]
-                    ]
-
-                    logger.info(
-                        f"[JINA] Embedding successful "
-                        f"({len(embeddings)} texts)"
+            batch_succeeded = False
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(
+                        self.api_url,
+                        headers=headers,
+                        json=payload,
+                        timeout=60,
                     )
 
-                    return embeddings
+                    if response.status_code == 200:
+                        result = response.json()
+                        batch_embs = [item["embedding"] for item in result["data"]]
+                        all_embeddings.extend(batch_embs)
+                        batch_succeeded = True
+                        time.sleep(0.3)
+                        break
 
-                elif response.status_code == 429:
+                    elif response.status_code == 429:
+                        retry_after = response.headers.get("Retry-After")
+                        if retry_after:
+                            try:
+                                wait_time = float(retry_after)
+                            except ValueError:
+                                wait_time = max(3.0, float(2 ** attempt))
+                        else:
+                            wait_time = max(3.0, float(2 ** attempt) + random.uniform(0.5, 2.0))
 
-                    # Jina may provide Retry-After
-                    retry_after = response.headers.get("Retry-After")
+                        logger.warning(
+                            f"[JINA] Rate limit (429) on batch {b_idx//batch_size + 1}. "
+                            f"Chờ {wait_time:.2f}s... (Attempt {attempt + 1}/{max_retries})"
+                        )
+                        time.sleep(wait_time)
 
-                    if retry_after:
-                        try:
-                            wait_time = float(retry_after)
-                        except ValueError:
-                            wait_time = 2 ** attempt
+                    elif response.status_code >= 500:
+                        wait_time = min(float(2 ** attempt) + random.uniform(0.5, 2.0), 30.0)
+                        logger.warning(
+                            f"[JINA] Server error {response.status_code}. "
+                            f"Chờ {wait_time:.2f}s... (Attempt {attempt + 1}/{max_retries})"
+                        )
+                        time.sleep(wait_time)
+
                     else:
-                        # Exponential backoff + small random jitter
-                        wait_time = (2 ** attempt) + random.uniform(0, 1)
+                        logger.error(f"[JINA] API Error {response.status_code}: {response.text}")
+                        raise Exception(f"Jina API error {response.status_code}: {response.text}")
 
-                    logger.warning(
-                        f"[JINA] Rate limit (429). "
-                        f"Chờ {wait_time:.2f}s... "
-                        f"(Attempt {attempt + 1}/{max_retries})"
-                    )
-
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.RequestException) as req_err:
+                    wait_time = min(float(2 ** attempt), 30.0)
+                    logger.warning(f"[JINA] Network error ({req_err}). Chờ {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
 
-                # ==================================================
-                # 3. SERVER ERRORS (5xx, including Cloudflare 520/522/524)
-                # ==================================================
-                elif response.status_code >= 500:
+            if not batch_succeeded:
+                raise Exception(f"Đã hết {max_retries} lần thử khi gọi Jina API cho batch {b_idx//batch_size + 1}.")
 
-                    wait_time = min(
-                        (2 ** attempt) + random.uniform(0.5, 2.0),
-                        30
-                    )
-
-                    logger.warning(
-                        f"[JINA] Server error {response.status_code}. "
-                        f"Chờ {wait_time:.2f}s... "
-                        f"(Attempt {attempt + 1}/{max_retries})"
-                    )
-
-                    time.sleep(wait_time)
-
-                # ==================================================
-                # 4. OTHER HTTP ERRORS
-                # ==================================================
-                else:
-
-                    logger.error(
-                        f"[JINA] API Error "
-                        f"{response.status_code}: "
-                        f"{response.text}"
-                    )
-
-                    # Những lỗi như:
-                    # 400 = Bad Request
-                    # 401 = Unauthorized
-                    # 403 = Forbidden
-                    # 404 = Not Found
-                    #
-                    # Retry thường không giải quyết được,
-                    # nên raise luôn.
-
-                    raise Exception(
-                        f"Jina API trả về lỗi "
-                        f"{response.status_code}: "
-                        f"{response.text}"
-                    )
-
-            # ======================================================
-            # 5. TIMEOUT
-            # ======================================================
-            except requests.exceptions.Timeout:
-
-                wait_time = min(
-                    2 ** attempt,
-                    30
-                )
-
-                logger.warning(
-                    f"[JINA] Request timeout. "
-                    f"Chờ {wait_time}s... "
-                    f"(Attempt {attempt + 1}/{max_retries})"
-                )
-
-                time.sleep(wait_time)
-
-            # ======================================================
-            # 6. NETWORK ERROR
-            # ======================================================
-            except requests.exceptions.ConnectionError as e:
-
-                wait_time = min(
-                    2 ** attempt,
-                    30
-                )
-
-                logger.warning(
-                    f"[JINA] Connection error: {e}. "
-                    f"Chờ {wait_time}s... "
-                    f"(Attempt {attempt + 1}/{max_retries})"
-                )
-
-                time.sleep(wait_time)
-
-            # ======================================================
-            # 7. OTHER REQUEST ERRORS
-            # ======================================================
-            except requests.exceptions.RequestException as e:
-
-                wait_time = min(
-                    2 ** attempt,
-                    30
-                )
-
-                logger.warning(
-                    f"[JINA] Request error: {e}. "
-                    f"Chờ {wait_time}s... "
-                    f"(Attempt {attempt + 1}/{max_retries})"
-                )
-
-                time.sleep(wait_time)
-
-        # ==========================================================
-        # 8. ALL RETRIES FAILED
-        # ==========================================================
-
-        raise Exception(
-            f"Đã hết {max_retries} lần thử khi gọi Jina API.")
+        logger.info(f"[JINA] Embedding hoàn tất thành công ({len(all_embeddings)}/{len(texts)} texts)")
+        return all_embeddings
 
     def _init_vector_store(self):
         """Lazy-init VectorStore nếu chưa truyền vào."""
