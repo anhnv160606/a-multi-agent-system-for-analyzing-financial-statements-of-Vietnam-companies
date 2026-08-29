@@ -18,9 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Copy and install Python dependencies
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt || true
+# 2. Copy and install pure Python dependencies
+COPY requirements-docker.txt ./
+RUN pip install --no-cache-dir -r requirements-docker.txt
 
 # 3. Copy frontend and backend package configs first for caching
 COPY frontend/package*.json ./frontend/
@@ -41,5 +41,5 @@ RUN cd frontend && npm run build
 EXPOSE 3000
 EXPOSE 5000
 
-# 8. Start server (Serves both the UI on port 3000 and the multi-agent backend)
+# 8. Start server
 CMD ["node", "backend/server.js"]

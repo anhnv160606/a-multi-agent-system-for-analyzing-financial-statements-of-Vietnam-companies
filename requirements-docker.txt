@@ -1,0 +1,33 @@
+# Core Multi-Agent Framework
+langchain
+langchain-core
+langchain-community
+langgraph
+langgraph-checkpoint
+pydantic
+pydantic-settings
+
+# Vector Store & Semantic Search
+chromadb
+sentence-transformers
+
+# LLM Providers
+google-generativeai
+groq
+openai
+
+# Financial Data & Calculation
+pandas
+numpy
+tabulate
+vnstock
+
+# Web API & Utilities
+fastapi
+uvicorn
+python-dotenv
+pyyaml
+requests
+httpx
+rich
+colorama

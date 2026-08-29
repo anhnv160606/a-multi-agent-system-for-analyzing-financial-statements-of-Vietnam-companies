@@ -13,14 +13,19 @@ app.use(express.json());
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const resolvePythonPath = () => {
   if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
-  const venvWin = path.join(PROJECT_ROOT, '.venv', 'Scripts', 'python.exe');
-  if (fs.existsSync(venvWin)) return venvWin;
-  const venvLinux = path.join(PROJECT_ROOT, '.venv', 'bin', 'python');
-  if (fs.existsSync(venvLinux)) return venvLinux;
-  return process.platform === 'win32' ? 'python' : 'python3';
+  if (process.platform === 'win32') {
+    const venvWin = path.join(PROJECT_ROOT, '.venv', 'Scripts', 'python.exe');
+    if (fs.existsSync(venvWin)) return venvWin;
+    return 'python';
+  } else {
+    const venvLinux = path.join(PROJECT_ROOT, '.venv', 'bin', 'python');
+    if (fs.existsSync(venvLinux)) return venvLinux;
+    return 'python3';
+  }
 };
 const PYTHON_PATH = resolvePythonPath();
 const STREAM_RUNNER = path.join(PROJECT_ROOT, 'src', 'ui', 'agent_stream_runner.py');
+const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 
 // ANSI Terminal Colors for Rich Terminal Logs
 const COLORS = {
@@ -160,8 +165,8 @@ app.post('/api/chat/stream', (req, res) => {
 
   pythonProcess.stderr.on('data', (data) => {
     const line = data.toString('utf-8').trim();
-    if (line.includes('ERROR')) {
-      console.error(`${COLORS.red}[Python ERROR] ${line}${COLORS.reset}`);
+    if (line) {
+      console.error(`${COLORS.red}[Python Stderr] ${line}${COLORS.reset}`);
     }
   });
 
