@@ -1,39 +1,45 @@
-# Multi-Agent Financial Analysis System - Main App Dockerfile
+# Multi-Agent Financial Analysis System - All-in-One Dockerfile
 FROM python:3.11-slim
 
-# Prevent Python from writing .pyc files and enable unbuffered output
+# Prevent Python from writing .pyc files & unbuffered stdout
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    PORT=3000
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies (OCR, PDF processing, graphics, MySQL client)
+# 1. Install system dependencies & Node.js 20
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     git \
-    tesseract-ocr \
-    tesseract-ocr-vie \
-    tesseract-ocr-eng \
-    poppler-utils \
-    libgl1 \
-    libglib2.0-0 \
-    default-mysql-client \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency specifications first to leverage Docker layer caching
-COPY pyproject.toml requirements.txt* ./
+# 2. Copy and install Python dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt || true
 
-# Install Python packages if requirements.txt exists and is not empty
-RUN if [ -s requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi
+# 3. Copy frontend and backend package configs first for caching
+COPY frontend/package*.json ./frontend/
+COPY backend/package*.json ./backend/
+COPY package*.json ./
 
-# Copy source code and configurations
+# 4. Install Node dependencies
+RUN cd backend && npm install --omit=dev
+RUN cd frontend && npm install
+
+# 5. Copy all project files
 COPY . .
 
-# Expose Streamlit port
-EXPOSE 8501
+# 6. Build production React frontend
+RUN cd frontend && npm run build
 
-# Default command
-CMD ["bash"]
+# 7. Expose port 3000 for full Web UI & API
+EXPOSE 3000
+EXPOSE 5000
+
+# 8. Start server (Serves both the UI on port 3000 and the multi-agent backend)
+CMD ["node", "backend/server.js"]

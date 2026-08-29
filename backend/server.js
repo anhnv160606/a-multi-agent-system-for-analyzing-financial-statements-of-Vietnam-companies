@@ -11,8 +11,15 @@ app.use(cors());
 app.use(express.json());
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const DATA_DIR = path.join(PROJECT_ROOT, 'data');
-const PYTHON_PATH = path.join(PROJECT_ROOT, '.venv', 'Scripts', 'python.exe');
+const resolvePythonPath = () => {
+  if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
+  const venvWin = path.join(PROJECT_ROOT, '.venv', 'Scripts', 'python.exe');
+  if (fs.existsSync(venvWin)) return venvWin;
+  const venvLinux = path.join(PROJECT_ROOT, '.venv', 'bin', 'python');
+  if (fs.existsSync(venvLinux)) return venvLinux;
+  return process.platform === 'win32' ? 'python' : 'python3';
+};
+const PYTHON_PATH = resolvePythonPath();
 const STREAM_RUNNER = path.join(PROJECT_ROOT, 'src', 'ui', 'agent_stream_runner.py');
 
 // ANSI Terminal Colors for Rich Terminal Logs
@@ -236,6 +243,19 @@ app.post('/api/chat', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 [Node.js Express Backend] Running with Real LLM Token Streaming on http://localhost:${PORT}`);
+// 5. Serve React Frontend Production Bundle if built
+const FRONTEND_DIST = path.join(PROJECT_ROOT, 'frontend', 'dist');
+if (fs.existsSync(FRONTEND_DIST)) {
+  app.use(express.static(FRONTEND_DIST));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+  });
+}
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n======================================================================`);
+  console.log(`🚀 ${COLORS.bright}${COLORS.green}FinAgent AI Server running on http://localhost:${PORT}${COLORS.reset}`);
+  console.log(`📡 Real-time Token Streaming & Multi-Agent Active`);
+  console.log(`======================================================================\n`);
 });
