@@ -271,14 +271,28 @@ class ReportAgent(BaseAgent):
         ]
         try:
             response = self.llm.invoke(messages)
-            return response.content if hasattr(response, "content") else str(response)
+            content = response.content if hasattr(response, "content") else str(response)
+            
+            # BỔ SUNG ĐOẠN NÀY: Xử lý trường hợp content là list do LangChain trả về
+            if isinstance(content, list):
+                text_parts = []
+                for item in content:
+                    if isinstance(item, str):
+                        text_parts.append(item)
+                    elif isinstance(item, dict) and "text" in item:
+                        text_parts.append(item["text"])
+                    elif hasattr(item, "text"):  # Đề phòng object có thuộc tính text
+                        text_parts.append(item.text)
+                return "".join(text_parts)
+                
+            return str(content)
+            
         except Exception as exc:
             self.logger.warning(
                 f"ReportAgent LLM call failed: {exc}",
                 extra={"event": "llm_error"},
             )
-            return self._build_fallback_markdown(synthesis)
-
+            return 'Lỗi LLM: không thể sinh nội dung báo cáo. Vui lòng thử lại sau hoặc liên hệ bộ phận hỗ trợ.'
     def _build_fallback_markdown(self, synthesis: dict[str, Any]) -> str:
         """Fallback khi không có LLM — dùng trực tiếp các string từ synthesis_results."""
         ticker = synthesis.get("ticker", "N/A")
