@@ -82,8 +82,8 @@ class MultiProviderLLM:
         if not api_key:
             raise ValueError("GEMINI_API_KEY is not set.")
 
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
+        import google.genai as genai
+        genai.Client(api_key=api_key)
         target_model = model_override or self.model_name or "gemini-3.6-flash"
         if "flash" in target_model or "gemini" not in target_model:
             target_model = "gemini-3.6-flash"

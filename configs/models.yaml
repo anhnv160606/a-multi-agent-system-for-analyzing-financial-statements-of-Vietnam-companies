@@ -11,8 +11,8 @@ router:
 agents:
   # 2. Agent mặc định chung (Groq siêu tốc)
   default:
-    provider: "groq"
-    model: "qwen/qwen3.8-27b"
+    provider: "gemini"
+    model: "gemini-3.1-flash-lite"
     temperature: 0.2
     max_tokens: 4096
 
@@ -22,7 +22,9 @@ agents:
     model: "qwen/qwen3.8-27b"
     temperature: 0.0 
 
-  # 4. Analysis Agent: Bóc tách DuPont & Sức khỏe tài chính chuyên sâu (Gemini 3.1 Flash Lite)
+  # 4. Analysis Agent: Bóc tách DuPont & Sức khỏe tài chính chuyên sâu
+  # NOTE: Đổi sang Groq vì GOOGLE_API_KEY hiện tại sai định dạng (AQ.xxx thay vì AIza...)
+  # Khi có GOOGLE_API_KEY hợp lệ, đổi lại: provider: "gemini", model: "gemini-3.1-flash-lite"
   analysis:
     provider: "gemini"
     model: "gemini-3.1-flash-lite"
@@ -34,10 +36,12 @@ agents:
     model: "qwen/qwen3.8-27b"
     temperature: 0.2
 
-  # 6. Report Writer Agent: Soạn thảo báo cáo tài chính hoàn chỉnh & Streaming (Gemini 3.1 Flash Lite)
+  # 6. Report Writer Agent: Soạn thảo báo cáo tài chính hoàn chỉnh
+  # NOTE: Đổi sang Groq vì GOOGLE_API_KEY hiện tại sai định dạng (AQ.xxx thay vì AIza...)
+  # Khi có GOOGLE_API_KEY hợp lệ, đổi lại: provider: "gemini", model: "gemini-3.1-flash-lite"
   report_writer:
-    provider: "gemini"
-    model: "gemini-3.1-flash-lite"
+    provider: "groq"
+    model: "qwen/qwen3.8-27b"
     temperature: 0.4
     max_tokens: 8192
 

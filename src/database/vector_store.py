@@ -72,6 +72,40 @@ class VectorStore:
             logger.error(f"Error loading vector_db config: {e}")
             return {}
 
+    def _get_or_recreate_collection(self, metadata_cfg: dict):
+        """
+        Tries to get or create a ChromaDB collection.
+        If an InvalidArgumentError occurs (e.g. embedding dimension mismatch),
+        automatically deletes the stale collection and recreates it so the system
+        always matches the active embedding model's output dimension.
+        """
+        try:
+            return self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata=metadata_cfg,
+                embedding_function=self.embedding_function,
+            )
+        except Exception as first_err:
+            err_str = str(first_err).lower()
+            # Detect dimension mismatch errors from ChromaDB
+            if "dimension" in err_str or "invalidargument" in err_str or "embedding" in err_str:
+                logger.warning(
+                    f"Embedding dimension mismatch detected for collection '{self.collection_name}': {first_err}. "
+                    f"Deleting stale collection and recreating with the current model's dimension..."
+                )
+                try:
+                    self.client.delete_collection(name=self.collection_name)
+                    logger.info(f"Deleted stale collection '{self.collection_name}'.")
+                    return self.client.get_or_create_collection(
+                        name=self.collection_name,
+                        metadata=metadata_cfg,
+                        embedding_function=self.embedding_function,
+                    )
+                except Exception as recreate_err:
+                    logger.error(f"Failed to recreate collection after dimension mismatch: {recreate_err}")
+                    raise recreate_err
+            raise first_err
+
     def _init_backend(self):
         """Attempts to initialize ChromaDB; activates fallback store if package is not present."""
         try:
@@ -96,11 +130,7 @@ class VectorStore:
                 )
 
             metadata_cfg = {"hnsw:space": self.distance_metric}
-            self.collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata=metadata_cfg,
-                embedding_function=self.embedding_function,
-            )
+            self.collection = self._get_or_recreate_collection(metadata_cfg)
             self.use_fallback = False
             logger.info(f"Vector Store collection '{self.collection_name}' ready ({self.distance_metric}).")
 
@@ -116,23 +146,43 @@ class VectorStore:
                                 stored_data = json.load(f)
                             if stored_data:
                                 docs, metas, ids, embeds = [], [], [], []
+                                expected_dim: Optional[int] = None
                                 for d_id, item in stored_data.items():
                                     ids.append(d_id)
                                     docs.append(item.get("content", ""))
                                     clean_m = {k: v for k, v in item.get("metadata", {}).items() if isinstance(v, (str, int, float, bool))}
                                     metas.append(clean_m)
                                     if "embedding" in item and item["embedding"]:
-                                        embeds.append(item["embedding"])
+                                        emb = item["embedding"]
+                                        if expected_dim is None:
+                                            expected_dim = len(emb)
+                                        embeds.append(emb)
+                                # Validate dimension consistency: skip old embeddings if they mismatch
+                                if embeds and len(embeds) == len(docs):
+                                    # Check if all embeddings share the same dimension
+                                    dims = set(len(e) for e in embeds)
+                                    if len(dims) > 1:
+                                        logger.warning(f"Mixed embedding dimensions {dims} in {src_file.name}. Dropping embeddings to avoid mismatch.")
+                                        embeds = []
                                 batch_size = 200
                                 for i in range(0, len(docs), batch_size):
                                     b_docs = docs[i : i + batch_size]
                                     b_metas = metas[i : i + batch_size]
                                     b_ids = ids[i : i + batch_size]
-                                    b_embeds = embeds[i : i + batch_size] if len(embeds) == len(docs) else None
-                                    if b_embeds:
-                                        self.collection.add(documents=b_docs, metadatas=b_metas, ids=b_ids, embeddings=b_embeds)
-                                    else:
-                                        self.collection.add(documents=b_docs, metadatas=b_metas, ids=b_ids)
+                                    b_embeds = embeds[i : i + batch_size] if embeds and len(embeds) == len(docs) else None
+                                    try:
+                                        if b_embeds:
+                                            self.collection.add(documents=b_docs, metadatas=b_metas, ids=b_ids, embeddings=b_embeds)
+                                        else:
+                                            self.collection.add(documents=b_docs, metadatas=b_metas, ids=b_ids)
+                                    except Exception as add_err:
+                                        # If add fails due to dimension mismatch, retry without embeddings
+                                        add_err_str = str(add_err).lower()
+                                        if "dimension" in add_err_str or "invalidargument" in add_err_str or "embedding" in add_err_str:
+                                            logger.warning(f"Dimension mismatch during auto-sync batch (dim={expected_dim}). Retrying without pre-computed embeddings...")
+                                            self.collection.add(documents=b_docs, metadatas=b_metas, ids=b_ids)
+                                        else:
+                                            raise add_err
                                 logger.info(f"Auto-synchronized {len(docs)} chunks from {src_file.name} into ChromaDB collection.")
                                 break
                         except Exception as err:
@@ -235,10 +285,22 @@ class VectorStore:
         return ids
 
     def _embed_query(self, text: str) -> List[float]:
-        """Generates 1024-dim query embedding using Jina AI API if token is present."""
+        """Generates query embedding using the same Jina model as the indexing pipeline (read from settings.yaml)."""
         try:
             from src.utils.llm_client import _load_env_file
             _load_env_file()
+        except Exception:
+            pass
+
+        # Read model_name from settings.yaml to stay consistent with EmbeddingPipeline
+        model_name = "jina-embeddings-v4"  # default matches settings.yaml
+        try:
+            import yaml as _yaml
+            _settings_path = self.project_root / "configs" / "settings.yaml"
+            if _settings_path.exists():
+                with open(_settings_path, "r", encoding="utf-8") as _f:
+                    _cfg = _yaml.safe_load(_f)
+                model_name = _cfg.get("embedding", {}).get("model_name", model_name)
         except Exception:
             pass
 
@@ -248,7 +310,7 @@ class VectorStore:
                 resp = requests.post(
                     "https://api.jina.ai/v1/embeddings",
                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {jina_token}"},
-                    json={"model": "jina-embeddings-v3", "task": "retrieval.query", "input": [text]},
+                    json={"model": model_name, "task": "retrieval.query", "input": [text]},
                     timeout=10,
                 )
                 if resp.status_code == 200:
@@ -256,6 +318,7 @@ class VectorStore:
             except Exception as e:
                 logger.debug(f"Jina query embedding error: {e}")
         return self._dummy_embed(text)
+
 
     def query(
         self,
