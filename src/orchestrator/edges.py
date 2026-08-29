@@ -34,18 +34,18 @@ def route_by_query_type(state: FinancialAnalysisState) -> Literal["retriever", "
     return "retriever"
 
 
-def route_after_retriever(state: FinancialAnalysisState) -> Literal["calculator", "__end__"]:
+def route_after_retriever(state: FinancialAnalysisState) -> Literal["calculator", "synthesis"]:
     """Quyết định node tiếp theo sau khi Retriever tìm kiếm xong.
 
     Nhánh:
-      - "simple": Kết thúc sau RAG pass (chỉ cần tra cứu văn bản/thông tin).
+      - "simple": Chuyển sang `synthesis` để tổng hợp và trả lời câu hỏi trực tiếp.
       - "analysis", "valuation", "calculate": Tiếp tục chuyển sang `calculator_node`.
     """
     query_type = state.get("query_type", "analysis")
 
     if query_type == "simple":
-        logger.info("route_after_retriever: Simple query RAG pass complete. Routing to END.")
-        return END
+        logger.info("route_after_retriever: Simple query RAG pass complete. Routing to 'synthesis'.")
+        return "synthesis"
 
     logger.info("route_after_retriever: Routing to 'calculator' for quantitative modeling.")
     return "calculator"

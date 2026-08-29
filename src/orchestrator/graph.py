@@ -102,7 +102,7 @@ def build_graph(
         route_after_retriever,
         {
             "calculator": "calculator",
-            END:          "evaluator",
+            "synthesis":  "synthesis",
         },
     )
 

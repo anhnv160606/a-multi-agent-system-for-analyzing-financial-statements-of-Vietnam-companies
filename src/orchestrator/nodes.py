@@ -261,14 +261,16 @@ def synthesis_node(
 
     has_analysis = bool(state.get("analysis_results"))
     has_calc = bool(state.get("calculator_results"))
-    if not has_analysis and not has_calc:
+    has_chunks = bool(state.get("retrieved_chunks"))
+    has_market = bool(state.get("market_data")) or bool(state.get("market_ratios"))
+    if not has_analysis and not has_calc and not has_chunks and not has_market:
         logger.warning(
-            "synthesis_node: skipped — no analysis_results or calculator_results",
+            "synthesis_node: skipped — no data available",
             extra={"event": "node_skipped", "node": "synthesis", "run_id": run_id},
         )
         _append_state_error(
             state,
-            "synthesis_node: skipped — khong co analysis_results lan calculator_results.",
+            "synthesis_node: skipped — khong co du lieu de tong hop.",
         )
         return state
 
@@ -305,7 +307,7 @@ def report_node(
 ) -> FinancialAnalysisState:
     """Node wrapping ReportAgent.
 
-    Guard: synthesis_results phải có trong state.
+    Guard: synthesis_results hoặc retrieved_chunks/market_data phải có trong state.
     Nếu không có → skip và ghi lỗi.
 
     Đọc:  state["synthesis_results"], state["query"], state["company_ticker"]
@@ -313,7 +315,9 @@ def report_node(
     """
     run_id = state.get("run_id", "")
 
-    if not isinstance(state.get("synthesis_results"), dict):
+    has_synthesis = isinstance(state.get("synthesis_results"), dict)
+    has_data = bool(state.get("retrieved_chunks")) or bool(state.get("market_data"))
+    if not has_synthesis and not has_data:
         logger.warning(
             "report_node: skipped — synthesis_results not available",
             extra={"event": "node_skipped", "node": "report", "run_id": run_id},
@@ -392,35 +396,37 @@ def build_nodes(
     report_cfg = config.get("report") or {}
     evaluator_cfg = config.get("evaluator") or {}
 
+    from src.utils.llm_client import get_default_llm
+
     router_agent = RouterAgent(
         config=router_cfg,
-        llm=llm,
+        llm=get_default_llm("router") or llm,
     )
     retriever_agent = RetrieverAgent(
         config=retriever_cfg,
-        llm=llm,
+        llm=get_default_llm("default") or llm,
         vector_store=vector_store,
         mysql_loader=mysql_loader,
     )
     calculator_agent = CalculatorAgent(
         config=calculator_cfg,
-        llm=llm,
+        llm=get_default_llm("calculator") or llm,
     )
     analysis_agent = AnalysisAgent(
         config=analysis_cfg,
-        llm=llm,
+        llm=get_default_llm("analysis") or llm,
     )
     synthesis_agent = SynthesisAgent(
         config=synthesis_cfg,
-        llm=llm,
+        llm=get_default_llm("synthesis") or llm,
     )
     report_agent = ReportAgent(
         config=report_cfg,
-        llm=llm,
+        llm=get_default_llm("report_writer") or llm,
     )
     evaluator_agent = EvaluatorAgent(
         config=evaluator_cfg,
-        llm=llm,
+        llm=get_default_llm("evaluator") or llm,
     )
 
     logger.info(

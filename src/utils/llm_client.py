@@ -84,7 +84,9 @@ class MultiProviderLLM:
 
         import google.generativeai as genai
         genai.configure(api_key=api_key)
-        target_model = model_override or self.model_name or "gemini-flash-latest"
+        target_model = model_override or self.model_name or "gemini-3.6-flash"
+        if "flash" in target_model or "gemini" not in target_model:
+            target_model = "gemini-3.6-flash"
         model = genai.GenerativeModel(
             model_name=target_model,
             generation_config=genai.types.GenerationConfig(temperature=self.temperature),
@@ -138,11 +140,26 @@ class MultiProviderLLM:
         )
         return resp.choices[0].message.content or ""
 
-    def invoke(self, prompt: str) -> LLMResponse:
+    def _normalize_prompt(self, prompt: Any) -> str:
+        """Converts string, list of LangChain messages, or dict into clean text prompt."""
+        if isinstance(prompt, list):
+            parts = []
+            for item in prompt:
+                if hasattr(item, "content"):
+                    parts.append(str(item.content))
+                elif isinstance(item, dict) and "content" in item:
+                    parts.append(str(item["content"]))
+                else:
+                    parts.append(str(item))
+            return "\n\n".join(parts)
+        return str(prompt)
+
+    def invoke(self, prompt: Any) -> LLMResponse:
         """
         Calls primary provider with automatic multi-provider failover on error/quota.
         """
         _load_env_file()
+        normalized_prompt = self._normalize_prompt(prompt)
         errors: List[str] = []
 
         # Build prioritized provider sequence
@@ -155,16 +172,16 @@ class MultiProviderLLM:
             try:
                 if prov == "groq" and os.environ.get("GROQ_API_KEY"):
                     model = self.model_name if "qwen" in self.model_name or "groq" in self.model_name or "gpt" in self.model_name else "qwen/qwen3.8-27b"
-                    content = self._call_groq(prompt, model_override=model)
+                    content = self._call_groq(normalized_prompt, model_override=model)
                     return LLMResponse(content=content, model=model, provider="groq")
 
                 elif prov == "gemini" and (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
                     model = self.model_name if "gemini" in self.model_name else "gemini-3.1-flash-lite"
-                    content = self._call_gemini(prompt, model_override=model)
+                    content = self._call_gemini(normalized_prompt, model_override=model)
                     return LLMResponse(content=content, model=model, provider="gemini")
 
                 elif prov == "openrouter" and os.environ.get("OPENROUTER_API_KEY"):
-                    content = self._call_openrouter(prompt)
+                    content = self._call_openrouter(normalized_prompt)
                     return LLMResponse(content=content, model="openrouter-free", provider="openrouter")
 
             except Exception as e:
@@ -173,6 +190,71 @@ class MultiProviderLLM:
                 errors.append(err_msg)
 
         raise RuntimeError(f"All LLM Providers failed. Errors: {'; '.join(errors)}")
+
+    def stream(self, prompt: Any):
+        """Streams tokens from primary provider with automatic multi-provider failover."""
+        _load_env_file()
+        normalized_prompt = self._normalize_prompt(prompt)
+
+        candidate_providers = [self.provider]
+        for p in ["groq", "gemini", "openrouter"]:
+            if p not in candidate_providers:
+                candidate_providers.append(p)
+
+        for prov in candidate_providers:
+            try:
+                if prov == "groq" and os.environ.get("GROQ_API_KEY"):
+                    from groq import Groq
+                    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+                    model = self.model_name if "qwen" in self.model_name or "groq" in self.model_name or "gpt" in self.model_name else "qwen/qwen3.8-27b"
+                    stream_resp = client.chat.completions.create(
+                        messages=[{"role": "user", "content": normalized_prompt}],
+                        model=model,
+                        temperature=self.temperature,
+                        stream=True,
+                    )
+                    for chunk in stream_resp:
+                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+                    return
+
+                elif prov == "gemini" and (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+                    import google.generativeai as genai
+                    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+                    genai.configure(api_key=api_key)
+                    target_model = self.model_name or "gemini-3.6-flash"
+                    if "flash" in target_model or "gemini" not in target_model:
+                        target_model = "gemini-3.6-flash"
+                    model = genai.GenerativeModel(
+                        model_name=target_model,
+                        generation_config=genai.types.GenerationConfig(temperature=self.temperature),
+                    )
+                    stream_resp = model.generate_content(normalized_prompt, stream=True)
+                    for chunk in stream_resp:
+                        if hasattr(chunk, "text") and chunk.text:
+                            yield chunk.text
+                    return
+
+                elif prov == "openrouter" and os.environ.get("OPENROUTER_API_KEY"):
+                    from openai import OpenAI
+                    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ.get("OPENROUTER_API_KEY"))
+                    stream_resp = client.chat.completions.create(
+                        model="minimax/minimax-m3:free",
+                        messages=[{"role": "user", "content": normalized_prompt}],
+                        temperature=self.temperature,
+                        stream=True,
+                    )
+                    for chunk in stream_resp:
+                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+                    return
+            except Exception as e:
+                logger.warning(f"Provider '{prov}' streaming failed: {e}")
+                continue
+
+        # Fallback to invoke if streaming fails
+        resp = self.invoke(prompt)
+        yield resp.content
 
 
 def get_default_llm(agent_type: str = "default") -> Optional[MultiProviderLLM]:

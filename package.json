@@ -1,0 +1,11 @@
+{
+  "name": "vietnam-financial-multi-agent-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Full-Stack React + Node.js RAG-Flow Alpha Intelligence Workspace for Financial Multi-Agent System",
+  "scripts": {
+    "server": "node backend/server.js",
+    "client": "npm --prefix frontend run dev",
+    "build:client": "npm --prefix frontend run build"
+  }
+}

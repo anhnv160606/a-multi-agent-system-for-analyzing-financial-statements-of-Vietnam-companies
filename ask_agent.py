@@ -108,30 +108,58 @@ def run_query(user_query: str):
             print(f"     + Đòn bẩy tài chính (Multiplier)   : {eq_str}")
             print(f"     ➔ ROE Tổng hợp                      : {roe_str}")
 
-    interp = analysis_res.get("interpretation") or dupont.get("interpretation")
-    if not interp or "Không đủ dữ liệu" in interp:
-        # Tự động tổng hợp câu trả lời ngôn ngữ tự nhiên từ Gemini
-        try:
-            summary_llm = get_default_llm("analysis") or llm
-            if summary_llm:
-                prompt = (
-                    f"Bạn là Chuyên gia Phân tích Tài chính và Chứng khoán Việt Nam.\n"
-                    f"Người dùng hỏi: '{user_query}'\n"
-                    f"Thông tin thu thập được từ hệ thống:\n"
-                    f"- Mã cổ phiếu: {ticker}\n"
-                    f"- Dữ liệu thị trường (VNStock): {market_data}\n"
-                    f"- Chỉ số định giá & tài chính: {market_ratios}\n"
-                    f"- Dữ liệu tính toán BCTC: {calc_res}\n"
-                    f"- Trích xuất PDF: {[c.get('content', '')[:200] for c in pdf_chunks[:2]]}\n\n"
-                    f"Hãy trả lời câu hỏi của người dùng một cách rõ ràng, chuyên nghiệp, phân tích tình hình kinh doanh, doanh thu, lợi nhuận, hiệu quả sinh lời và nhận định cổ phiếu bằng tiếng Việt."
-                )
-                interp = summary_llm.invoke(prompt).content
-        except Exception as e:
-            pass
+    # 5. Hiển thị Tổng hợp Đa chiều (Synthesis Agent)
+    synthesis_res = final_state.get("synthesis_results")
+    if isinstance(synthesis_res, dict):
+        exec_sum = synthesis_res.get("executive_summary")
+        if exec_sum:
+            print(f"\n📑 6. TÓM TẮT ĐIỀU HÀNH (Synthesis Agent):")
+            print(f"   {exec_sum}")
 
-    if interp:
-        print(f"\n💡 6. CÂU TRẢ LỜI TỔNG HỢP TỪ AI (Google Gemini):")
-        print(f"   {interp.strip()}")
+        strengths = synthesis_res.get("strengths") or []
+        if strengths:
+            print(f"\n   💪 Điểm mạnh (Strengths):")
+            for s in strengths[:3]:
+                print(f"      + {s}")
+
+        risks = synthesis_res.get("risks") or []
+        if risks:
+            print(f"\n   ⚠️ Rủi ro & Thách thức (Risks):")
+            for r in risks[:3]:
+                print(f"      + {r}")
+
+    # 6. Hiển thị Báo cáo Tài chính Hoàn chỉnh (Report Agent)
+    final_report = final_state.get("final_report")
+    if final_report and isinstance(final_report, str) and len(final_report.strip()) > 50:
+        print(f"\n📄 7. BÁO CÁO PHÂN TÍCH TÀI CHÍNH TỔNG HỢP (Report Agent):")
+        print("   " + "-" * 76)
+        for line in final_report.strip().split("\n"):
+            print(f"   {line}")
+        print("   " + "-" * 76)
+    else:
+        interp = analysis_res.get("interpretation") or dupont.get("interpretation")
+        if not interp or "Không đủ dữ liệu" in interp:
+            try:
+                summary_llm = get_default_llm("analysis") or llm
+                if summary_llm:
+                    prompt = (
+                        f"Bạn là Chuyên gia Phân tích Tài chính và Chứng khoán Việt Nam.\n"
+                        f"Người dùng hỏi: '{user_query}'\n"
+                        f"Thông tin thu thập được từ hệ thống:\n"
+                        f"- Mã cổ phiếu: {ticker}\n"
+                        f"- Dữ liệu thị trường (VNStock): {market_data}\n"
+                        f"- Chỉ số định giá & tài chính: {market_ratios}\n"
+                        f"- Dữ liệu tính toán BCTC: {calc_res}\n"
+                        f"- Trích xuất PDF: {[c.get('content', '')[:200] for c in pdf_chunks[:2]]}\n\n"
+                        f"Hãy trả lời câu hỏi của người dùng một cách rõ ràng, chuyên nghiệp, phân tích tình hình kinh doanh, doanh thu, lợi nhuận, hiệu quả sinh lời và nhận định cổ phiếu bằng tiếng Việt."
+                    )
+                    interp = summary_llm.invoke(prompt).content
+            except Exception:
+                pass
+
+        if interp:
+            print(f"\n💡 7. CÂU TRẢ LỜI TỔNG HỢP TỪ AI (Google Gemini):")
+            print(f"   {interp.strip()}")
 
     print("\n" + "=" * 80)
     print(f"✅ ĐÁNH GIÁ CHẤT LƯỢNG (Evaluator Agent): Điểm tin cậy = {confidence:.2f}/1.00")

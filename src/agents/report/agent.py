@@ -265,11 +265,20 @@ class ReportAgent(BaseAgent):
         )
 
         from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
+        import os, sys
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
         ]
         try:
+            if os.environ.get("STREAM_REPORT_TOKENS") == "1" and hasattr(self.llm, "stream"):
+                collected = []
+                for chunk in self.llm.stream(messages):
+                    collected.append(chunk)
+                    sys.stdout.write(f"__TOKEN_CHUNK__{json.dumps({'chunk': chunk}, ensure_ascii=False)}__TOKEN_CHUNK__\n")
+                    sys.stdout.flush()
+                return "".join(collected)
+
             response = self.llm.invoke(messages)
             content = response.content if hasattr(response, "content") else str(response)
             
@@ -361,11 +370,14 @@ class ReportAgent(BaseAgent):
         """
         report = llm_markdown
 
-        # Thay thế deterministic placeholders
-        report = report.replace("{{METRICS_TABLE}}", metrics_table)
-        report = report.replace("{{STRENGTHS_LIST}}", strengths_md)
-        report = report.replace("{{RISKS_LIST}}", risks_md)
-        report = report.replace("{{DISCLAIMER}}", disclaimer)
+        # Thay thế deterministic placeholders (hỗ trợ cả {{PLACEHOLDER}} và {PLACEHOLDER})
+        for ph, val in [
+            ("METRICS_TABLE", metrics_table),
+            ("STRENGTHS_LIST", strengths_md),
+            ("RISKS_LIST", risks_md),
+            ("DISCLAIMER", disclaimer),
+        ]:
+            report = report.replace(f"{{{{{ph}}}}}", val).replace(f"{{{ph}}}", val)
 
         # Fallback cho các CONTENT_ placeholders (nếu LLM quên fill)
         exec_summary = synthesis.get("executive_summary", "")

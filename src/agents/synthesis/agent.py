@@ -115,9 +115,11 @@ class SynthesisAgent(BaseAgent):
         # --- Validate đầu vào ---
         has_analysis = bool(state.get("analysis_results"))
         has_calc = bool(state.get("calculator_results"))
-        if not has_analysis and not has_calc:
+        has_chunks = bool(state.get("retrieved_chunks"))
+        has_market = bool(state.get("market_data")) or bool(state.get("market_ratios"))
+        if not has_analysis and not has_calc and not has_chunks and not has_market:
             msg = (
-                "SynthesisAgent: không có analysis_results và calculator_results "
+                "SynthesisAgent: không có dữ liệu phân tích, tính toán hoặc tra cứu "
                 "trong state — không thể tổng hợp."
             )
             self._append_error(state, msg)
@@ -257,9 +259,24 @@ class SynthesisAgent(BaseAgent):
             if content:
                 text_excerpts.append(content)
 
+        # Realtime market data from VNStock
+        market_data_info = {}
+        m_data = state.get("market_data")
+        if m_data and hasattr(m_data, "records") and m_data.records:
+            latest = m_data.records[-1]
+            market_data_info = {
+                "latest_price": getattr(latest, "close", None),
+                "open": getattr(latest, "open", None),
+                "high": getattr(latest, "high", None),
+                "low": getattr(latest, "low", None),
+                "volume": getattr(latest, "volume", None),
+                "date": str(getattr(latest, "time", "")),
+            }
+
         context = {
             "ticker": ticker,
             "company_name": self._extract_company_name(state),
+            "market_data": market_data_info,
             "fiscal_years": state.get("fiscal_years", []),
             "key_metrics_from_calculator": key_metrics_from_calc,
             "key_metrics_by_year": key_metrics_by_year,
